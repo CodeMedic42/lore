@@ -1,0 +1,25 @@
+{
+  "name": "living-ai-knowledge",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Cross-repo knowledge graph that AI agents write to and query",
+  "scripts": {
+    "serve": "tsx src/server.ts",
+    "seed": "tsx src/cli/seed.ts",
+    "ask": "tsx src/cli/ask.ts",
+    "reset": "rm -rf .data && tsx src/cli/migrate.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test --experimental-strip-types test/*.test.ts"
+  },
+  "dependencies": {
+    "@electric-sql/pglite": "^0.5.8",
+    "pg": "^8.23.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.2",
+    "@types/pg": "^8.23.1",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
+  }
+}
