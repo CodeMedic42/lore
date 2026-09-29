@@ -69,13 +69,21 @@ export interface ExtractOptions {
   includeIntraPackage?: boolean
   dryRun?: boolean
   maxFiles?: number
+  /** Skip packages whose name or path contains any of these. Storybook and example
+   *  packages import everything, so left in they dominate every "what uses this"
+   *  answer with demo code rather than real consumers. */
+  exclude?: string[]
 }
 
 export interface ExtractResult {
   repoKey: string
   packages: string[]
+  excluded: string[]
   files: number
   components: number
+  /** How many components carry a doc comment. Low coverage means similarity
+   *  search will be matching on names alone, which is barely better than grep. */
+  documented: number
   observations: number
   accepted: number
   rejected: number
@@ -113,7 +121,7 @@ export async function extractMonorepo(db: Db, opts: ExtractOptions): Promise<Ext
   const manifests = await findManifests(root)
   if (!manifests.length) {
     return {
-      repoKey, packages: [], files: 0, components: 0, observations: 0,
+      repoKey, packages: [], excluded: [], files: 0, components: 0, documented: 0, observations: 0,
       accepted: 0, rejected: 0, swept: 0,
       warnings: [`No package.json found under ${root} — is this a JavaScript/TypeScript project?`],
       preview,
@@ -121,14 +129,25 @@ export async function extractMonorepo(db: Db, opts: ExtractOptions): Promise<Ext
   }
 
   const packages: PackageInfo[] = []
+  const excluded: string[] = []
+  // Excluding a package must also keep its FILES out of the walk, or its parent
+  // simply absorbs them and the demo code reappears under another name.
+  const excludedDirs: string[] = []
   for (const file of manifests) {
     try {
       const manifest = JSON.parse(await readFile(file, 'utf8'))
       if (!manifest.name) continue
-      packages.push({
-        name: manifest.name, dir: dirname(file), manifest,
-        isPrivate: Boolean(manifest.private),
-      })
+      const dir = dirname(file)
+      const relDir = relative(root, dir).replace(/\\/g, '/')
+      // Storybook and example packages import everything they demonstrate, so
+      // left in they dominate every "what uses this" answer with demo code
+      // instead of real consumers.
+      if (opts.exclude?.some((p) => manifest.name.includes(p) || relDir.includes(p))) {
+        excluded.push(manifest.name)
+        excludedDirs.push(dir)
+        continue
+      }
+      packages.push({ name: manifest.name, dir, manifest, isPrivate: Boolean(manifest.private) })
     } catch {
       warnings.push(`could not parse ${relative(root, file)}`)
     }
@@ -145,6 +164,7 @@ export async function extractMonorepo(db: Db, opts: ExtractOptions): Promise<Ext
 
   let fileCount = 0
   let componentCount = 0
+  let documented = 0
   const seenComponents = new Set<string>()
 
   for (const pkg of packages) {
@@ -183,7 +203,7 @@ export async function extractMonorepo(db: Db, opts: ExtractOptions): Promise<Ext
       }
     }
 
-    const sources = await walkSources(pkg.dir, packages, maxFiles - fileCount)
+    const sources = await walkSources(pkg.dir, packages, maxFiles - fileCount, excludedDirs)
     const languages = new Set<string>()
 
     for (const file of sources) {
@@ -206,7 +226,7 @@ export async function extractMonorepo(db: Db, opts: ExtractOptions): Promise<Ext
       const jsx = new Set(parseJsxUsage(text))
 
       // Components this file exports.
-      const componentExports = exports.filter((e) => looksLikeComponent(e.name, file))
+      const componentExports = exports.filter((e) => looksLikeComponent(e.name, file, e.kind))
       const localComponents = componentExports.map((e) => e.name)
       const docFor = new Map(componentExports.filter((e) => e.doc).map((e) => [e.name, e.doc!]))
 
@@ -226,6 +246,7 @@ export async function extractMonorepo(db: Db, opts: ExtractOptions): Promise<Ext
           // material for "does something like this already exist?" than a name.
           const doc = docFor.get(name)
           if (doc) {
+            documented++
             obs.push({
               subject: name, subject_kind: 'component',
               subject_identifiers: id('module_export', key),
@@ -286,8 +307,8 @@ export async function extractMonorepo(db: Db, opts: ExtractOptions): Promise<Ext
 
   if (opts.dryRun) {
     return {
-      repoKey, packages: packages.map((p) => p.name), files: fileCount,
-      components: seenComponents.size, observations: obs.length,
+      repoKey, packages: packages.map((p) => p.name), excluded, files: fileCount,
+      components: seenComponents.size, documented, observations: obs.length,
       accepted: 0, rejected: 0, swept: 0, warnings,
       preview: preview.slice(0, 40),
     }
@@ -320,8 +341,8 @@ export async function extractMonorepo(db: Db, opts: ExtractOptions): Promise<Ext
   const sweep = await run.finish()
 
   return {
-    repoKey, packages: packages.map((p) => p.name), files: fileCount,
-    components: seenComponents.size, observations: obs.length,
+    repoKey, packages: packages.map((p) => p.name), excluded, files: fileCount,
+    components: seenComponents.size, documented, observations: obs.length,
     accepted, rejected, swept: sweep.removedEdges, warnings, preview: preview.slice(0, 40),
   }
 }
@@ -379,8 +400,16 @@ async function findManifests(root: string): Promise<string[]> {
 }
 
 /** Source files belonging to this package — not to a nested one. */
-async function walkSources(dir: string, packages: PackageInfo[], budget: number): Promise<string[]> {
-  const nested = packages.map((p) => p.dir).filter((d) => d !== dir && d.startsWith(`${dir}/`))
+async function walkSources(
+  dir: string,
+  packages: PackageInfo[],
+  budget: number,
+  excludedDirs: string[] = [],
+): Promise<string[]> {
+  const nested = [
+    ...packages.map((p) => p.dir).filter((d) => d !== dir && d.startsWith(`${dir}/`)),
+    ...excludedDirs.filter((d) => d.startsWith(`${dir}/`) || d === dir),
+  ]
   const out: string[] = []
   const walk = async (current: string, depth: number) => {
     if (out.length >= budget || depth > 12) return

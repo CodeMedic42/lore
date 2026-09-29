@@ -8,7 +8,8 @@ const arg = (k: string) => args.find((a) => a.startsWith(`--${k}=`))?.slice(k.le
 const root = args.find((a) => !a.startsWith('--'))
 
 if (!root) {
-  console.error('usage: npm run extract -- <path-to-repo> [--repo=key] [--url=browse-url] [--dry-run] [--intra]')
+  console.error('usage: npm run extract -- <path-to-repo> [--repo=key] [--url=browse-url]')
+  console.error('                          [--dry-run] [--intra] [--exclude=storybook,example]')
   process.exit(1)
 }
 
@@ -22,6 +23,7 @@ const r = await extractMonorepo(db, {
   browseUrl: arg('url'),
   env: arg('env'),
   includeIntraPackage: args.includes('--intra'),
+  exclude: arg('exclude')?.split(',').map((x) => x.trim()).filter(Boolean),
   dryRun: args.includes('--dry-run'),
   maxFiles: Number(arg('max-files') ?? 5000),
 })
@@ -30,6 +32,11 @@ console.log(`${args.includes('--dry-run') ? 'Would index' : 'Indexed'} ${r.repoK
 console.log(`  packages:   ${r.packages.length}`)
 console.log(`  files read: ${r.files}`)
 console.log(`  components: ${r.components}`)
+if (r.components) {
+  const pct = Math.round((r.documented / r.components) * 100)
+  console.log(`  documented: ${r.documented} (${pct}%)${pct < 20 ? '  <- low: similarity search will match on names alone' : ''}`)
+}
+if (r.excluded.length) console.log(`  excluded:   ${r.excluded.join(', ')}`)
 console.log(`  facts:      ${r.observations}${args.includes('--dry-run') ? '' : ` (${r.accepted} accepted, ${r.rejected} rejected)`}`)
 if (r.swept) console.log(`  removed:    ${r.swept} fact(s) no longer present in the code`)
 

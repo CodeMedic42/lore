@@ -112,7 +112,16 @@ export function parseExports(source: string): ExportedName[] {
     [/export\s+class\s+([\w$]+)/g, 'class'],
     [/export\s+(?:const|let|var)\s+([\w$]+)/g, 'const'],
     [/export\s+(?:type|interface)\s+([\w$]+)/g, 'type'],
-    [/export\s+default\s+(?:async\s+)?(?:function|class)?\s*([\w$]+)?/g, 'default'],
+    // `export default Foo` but NOT `export default Hoc(Foo)` - in the call form the
+    // captured name is the wrapper (memo, applyForwardRef, ApplyConsumer), and
+    // recording it would invent a component that does not exist.
+    // Two separate shapes, because one pattern with an optional `function|class`
+    // lets the group match empty and capture the keyword itself as the name.
+    [/export\s+default\s+(?:async\s+)?(?:function|class)\s+([\w$]+)/g, 'default'],
+    // `export default Foo` but NOT `export default Hoc(Foo)`. The \b matters:
+    // without it the greedy capture BACKTRACKS to satisfy the lookahead, so
+    // `export default ApplyConsumer(` quietly yields "ApplyConsume".
+    [/export\s+default\s+(?!(?:async\s+)?(?:function|class)\b)([\w$]+)\b(?!\s*\()/g, 'default'],
   ]
   for (const [re, kind] of patterns) {
     for (const m of src.matchAll(re)) {
@@ -155,10 +164,20 @@ export function parseJsxUsage(source: string): string[] {
   return [...names]
 }
 
-/** PascalCase, in a JSX-capable file, is the usual signal for a component. */
-export function looksLikeComponent(name: string, path: string): boolean {
+/**
+ * PascalCase, in a JSX-capable file, exported as a value rather than a type.
+ *
+ * The kind check is load-bearing. A component library exports roughly as many
+ * PascalCase INTERFACES as components - BadgeProps, ChipProps, DatePickerHandle -
+ * and without it a third of the "components" found are type declarations, which
+ * then pollute every answer about what exists and what composes what.
+ */
+export function looksLikeComponent(name: string, path: string, kind?: ExportedName['kind']): boolean {
+  if (kind === 'type') return false
   if (!/^[A-Z][A-Za-z0-9]*$/.test(name)) return false
   if (!/\.(tsx|jsx)$/.test(path)) return false
   // Screaming case is a constant, not a component.
-  return name !== name.toUpperCase()
+  if (name === name.toUpperCase()) return false
+  // Conventional suffixes for the types that accompany a component.
+  return !/(Props|PropsInt|Handle|Ref|Context|Options|Config|Args|State|Result)$/.test(name)
 }

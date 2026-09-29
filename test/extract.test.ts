@@ -60,6 +60,43 @@ test('exports are read in every shape people write them', () => {
   assert.equal(byName.Public, 'const', 'aliased export uses the public name')
 })
 
+test('every shape of default export is read correctly', () => {
+  const shapes: Array<[string, string[]]> = [
+    ['export default ExternalBoundary;', ['ExternalBoundary']],
+    ['export default function Widget() {}', ['Widget']],
+    ['export default async function Loader() {}', ['Loader']],
+    ['export default class Panel extends X {}', ['Panel']],
+    ['export default function () {}', []],
+    // A default export that is a CALL exports the wrapper's result, not the
+    // wrapper. Recording the wrapper invents a component that does not exist.
+    ['export default memo(Thing);', []],
+    ['export default applyForwardRef(Accordion);', []],
+    ['export default ApplyConsumer(SubMenu);', []],
+  ]
+  for (const [src, expected] of shapes) {
+    assert.deepEqual(parseExports(src).map((e) => e.name), expected, src)
+  }
+})
+
+test('a PascalCase type export is not a component', () => {
+  // A component library exports roughly as many PascalCase interfaces as
+  // components; without this a third of what is "found" is type declarations.
+  const got = parseExports(`
+    export interface BadgeProps { a: string }
+    export type ChipVariant = 'a' | 'b'
+    export const Badge = () => null
+  `)
+  const components = got.filter((e) => looksLikeComponent(e.name, 'x.tsx', e.kind))
+  assert.deepEqual(components.map((e) => e.name), ['Badge'])
+})
+
+test('conventional companion-type names are not components either', () => {
+  for (const name of ['BadgeProps', 'DatePickerHandle', 'FieldContext', 'ChipOptions', 'FormState']) {
+    assert.equal(looksLikeComponent(name, 'x.tsx', 'const'), false, name)
+  }
+  assert.equal(looksLikeComponent('Badge', 'x.tsx', 'const'), true)
+})
+
 test('JSX usage picks out components, not DOM elements', () => {
   const got = parseJsxUsage(`<div><TextField /><Menu.Item /><span>x</span><Button/></div>`)
   assert.deepEqual(got.sort(), ['Button', 'Menu', 'TextField'])
@@ -203,6 +240,49 @@ test('a re-scan closes what has been deleted from the code', async () => {
     `select count(*)::text n from edge_now e join proposition p on p.id = e.proposition_id
       where p.predicate = 'composes'`)
   assert.equal(Number(composes.rows[0]!.n), 0)
+  await rm(dir, { recursive: true, force: true })
+  await db.close()
+})
+
+test('excluding a package also keeps its files out of the walk', async () => {
+  const db = await freshDb()
+  const dir = await mkdtemp(join(tmpdir(), 'lak-excl-'))
+  const write = async (p: string, body: string) => {
+    await mkdir(join(dir, p, '..'), { recursive: true })
+    await writeFile(join(dir, p), body)
+  }
+  await write('package.json', JSON.stringify({ name: '@acme/root', private: true }))
+  await write('packages/lib/package.json', JSON.stringify({ name: '@acme/lib', main: 'src/index.ts' }))
+  await write('packages/lib/src/Button.tsx', 'export const Button = () => <button />\n')
+  await write('packages/storybook/package.json', JSON.stringify({
+    name: '@acme/storybook', dependencies: { '@acme/lib': '1.0.0' } }))
+  await write('packages/storybook/src/ButtonStory.tsx',
+    "import { Button } from '@acme/lib'\nexport const ButtonStory = () => <Button />\n")
+
+  const r = await extractMonorepo(db, { root: dir, repoKey: 'ui', exclude: ['storybook'] })
+  assert.ok(r.excluded.includes('@acme/storybook'))
+
+  // Without directory exclusion the root package simply absorbs the story files
+  // and the demo code reappears under a different name.
+  const story = await db.query<{ n: string }>(
+    `select count(*)::text n from entity where display_name = 'ButtonStory'`)
+  assert.equal(Number(story.rows[0]!.n), 0, 'excluded files must not be re-attributed to a parent package')
+  await rm(dir, { recursive: true, force: true })
+  await db.close()
+})
+
+test('doc coverage is reported, because similarity depends on it', async () => {
+  const db = await freshDb()
+  const dir = await mkdtemp(join(tmpdir(), 'lak-doc-'))
+  await mkdir(join(dir, 'src'), { recursive: true })
+  await writeFile(join(dir, 'package.json'), JSON.stringify({ name: '@acme/solo', main: 'src/index.ts' }))
+  await writeFile(join(dir, 'src/Documented.tsx'),
+    '/** Picks a start and end date. */\nexport const Documented = () => <div />\n')
+  await writeFile(join(dir, 'src/Bare.tsx'), 'export const Bare = () => <div />\n')
+
+  const r = await extractMonorepo(db, { root: dir, repoKey: 'solo' })
+  assert.equal(r.components, 2)
+  assert.equal(r.documented, 1)
   await rm(dir, { recursive: true, force: true })
   await db.close()
 })
