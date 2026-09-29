@@ -229,6 +229,22 @@ export const TEMPLATES = {
     maxDepth: 5,
     terminals: ['client', 'service', 'endpoint'],
   },
+  /**
+   * "How does authentication work?" / "Where is patient data stored?"
+   *
+   * Starts from a CAPABILITY or DATA CONCEPT rather than a named system, which is
+   * how people actually ask. The first hop is backwards - from the concept to
+   * whatever implements or handles it - and from there it is ordinary data flow.
+   */
+  concept_map: {
+    forward: [
+      'calls', 'reads_from', 'writes_to', 'caches_in', 'falls_back_to', 'subscribes_to',
+      'publishes_to', 'exposes_endpoint', 'provisioned_by', 'deployed_to', 'lives_in_repo',
+    ],
+    reverse: ['implements', 'handles_data', 'exposes_endpoint'],
+    maxDepth: 6,
+    terminals: ['datastore', 'cache', 'queue', 'cloud_resource', 'service', 'client', 'endpoint', 'repo'],
+  },
   /** "How do I connect?" - yields where the secret lives, never the secret. */
   access: {
     forward: ['connect_via', 'secret_at', 'provisioned_by', 'deployed_to', 'lives_in_repo'],

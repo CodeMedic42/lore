@@ -6,6 +6,8 @@ import { markDistinct, merge, unmerge } from '../resolver/entity_resolver.ts'
 import { entityFacts, runTemplate, TEMPLATES, type TemplateName } from '../query/traverse.ts'
 import { ask, findAnchors } from '../query/ask.ts'
 import { checkFileAnchors, reverificationQueue } from '../store/anchors.ts'
+import { askableQuestions, joinCandidates, knowledgeGaps } from '../query/gaps.ts'
+import { maintain } from '../store/maintain.ts'
 
 type Handler = (ctx: {
   db: Db
@@ -200,6 +202,26 @@ route('POST', '/v1/anchors/check', async ({ db, body }) => {
 route('GET', '/v1/reverification-queue', async ({ db, url }) => {
   const limit = Number(url.searchParams.get('limit') ?? 50)
   return { body: { queue: await reverificationQueue(db, limit) } }
+})
+
+/** Everything the graph knows it does not know, ranked by what answering unlocks. */
+route('GET', '/v1/gaps', async ({ db, url }) => {
+  await maintain(db)
+  const limit = url.searchParams.get('limit')
+  return { body: { gaps: await knowledgeGaps(db, { limit: limit ? Number(limit) : undefined }) } }
+})
+
+/** The small set an agent should actually raise with the user right now. */
+route('GET', '/v1/gaps/ask', async ({ db, url }) => {
+  await maintain(db)
+  const budget = Number(url.searchParams.get('budget') ?? 2)
+  const near = url.searchParams.get('near') ?? undefined
+  return { body: { questions: await askableQuestions(db, { budget, near }) } }
+})
+
+/** Proposed cross-repo joins: a call site in one repo matching a route in another. */
+route('GET', '/v1/join-candidates', async ({ db }) => {
+  return { body: { candidates: await joinCandidates(db) } }
 })
 
 route('GET', '/healthz', async ({ db }) => {

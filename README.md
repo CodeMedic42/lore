@@ -27,8 +27,11 @@ docker start lak-pg          # or: docker run -d --name lak-pg -e POSTGRES_PASSW
 npm install
 npx tsx src/cli/migrate.ts   # apply migrations
 npm run seed                 # hand-seed the notifications scenario
-npm run ask -- "where does the list of notifications in Client A come from"
-npm run ask -- "how do I connect to the notifications-db"
+npm run ask -- "where does the list of notifications come from"
+npm run ask -- "how does authentication work for this client"
+npm run ask -- "what alerts are set up in AWS"
+npm run gaps                 # what the assistant should ask you next
+npm run gaps -- --all        # every detected hole, ranked
 npm run serve                # HTTP API on :4310
 npm test                     # 15 invariant tests, run on in-process PGlite
 ```
@@ -153,6 +156,71 @@ Three path templates cover most questions: `data_provenance`, `blast_radius`,
 `exposes_endpoint`, a walk that reaches an endpoint dead-ends and can never reach
 the service behind it.
 
+## Knowing what it doesn't know
+
+The graph detects its own holes, so an assistant can ask a *useful* question rather
+than an annoying one. Every gap below is mechanically derived from the shape of the
+graph — nothing is guessed:
+
+| Gap | Question it produces |
+|---|---|
+| `dangling_endpoint` | Something calls this route; nothing on record serves it. **Answering joins two repos.** |
+| `name_collision` | Two similar names, unresolved. The Angular-rewrite-beside-the-React-one case. |
+| `homeless_project` | A project with no repository |
+| `no_access_info` | A database nobody recorded how to reach |
+| `unknown_technology` | A project whose language and framework are unknown |
+| `unprovisioned_infra` | Infrastructure with no owning IaC module |
+| `undescribed_concept` | A capability with no description, so it can never be matched to a question |
+| `unidentified_entity` | Well connected, but identified only by name |
+| `orphan_entity` | Mentioned once, linked to nothing |
+
+Gaps are ranked by what answering them unlocks — the same unknown counts for more
+on a well-connected entity — and `askableQuestions()` returns only the top one or
+two. An assistant that interrupts five times a session gets muted, and then nothing
+is learned at all.
+
+Two rules keep question quality up:
+
+- **Never ask what the graph can settle itself.** `GET /v1/notifications` and
+  `POST /v1/notifications` differ by four characters, so name similarity flags them
+  — but they carry different method qualifiers and are definitively different
+  routes. `maintain()` marks such pairs distinct without asking.
+- **Never ask the same thing twice.** When a join proposal already covers a pair,
+  the generic "are these the same?" is suppressed in favour of the better-phrased
+  "is this the same route as X, served by Y?"
+
+## Connections get proposed, not invented
+
+One repo records *"I call `GET /v1/notifications`"*. Another, weeks later and by
+someone else, records *"I serve `GET /v1/notifications`"*. Those are two separate
+endpoint entities until something notices they are the same route.
+
+`endpoint_join_candidates()` matches them on path and method and **proposes** the
+link. It never asserts it — a path collision between two unrelated systems is
+entirely possible. This is the moment the graph becomes worth more than the sum of
+its parts, and it happens without anyone holding both repos in their head.
+
+## Three ways knowledge arrives
+
+| Mode | `method` | Example |
+|---|---|---|
+| Inferred | `llm_inferred` | The agent reads the code and sees the fetch call |
+| Elicited | `human` | The agent asks which service defines a route; you answer |
+| Told | `human` | You say "the new client is Angular, replacing the React one" |
+| Derived | `code_derived` / `telemetry` | An extractor parses Terraform, or traces are imported |
+
+Trust weights these differently, and every claim records who asserted it.
+
+## Three ways questions are answered
+
+Not every question is a path:
+
+- **Traversal** — "where does the notification list come from" → a chain across repos
+- **Concept walk** — "how does authentication work" starts at a *capability*, not a
+  named system, hops backwards to whatever implements it, then follows the data
+- **Listing** — "what alerts are set up in AWS" is a filtered list; answering that
+  with a graph walk would be perverse
+
 ## Layout
 
 | Path | Role |
@@ -162,7 +230,7 @@ the service behind it.
 | `src/domain/` | Fingerprinting, the identifying/descriptive qualifier split, predicate vocabulary, secret scanning |
 | `src/resolver/` | The resolution ladder, merge/unmerge/distinct |
 | `src/store/` | Ingest and scope sweeps |
-| `src/query/` | Traversal, path templates, anchor finding, rendering |
+| `src/query/` | Traversal, path templates, anchor finding, gap detection, rendering |
 | `src/api/` | HTTP surface |
 
 ## Deliberately not built yet

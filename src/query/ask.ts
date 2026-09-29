@@ -65,6 +65,37 @@ const PREFERRED_START: Record<TemplateName, string[]> = {
   data_provenance: ['client', 'service', 'endpoint'],
   blast_radius: ['datastore', 'cache', 'queue', 'service', 'cloud_resource'],
   access: ['datastore', 'cache', 'queue', 'cloud_resource'],
+  concept_map: ['capability', 'data_concept'],
+}
+
+/**
+ * Plural words people use for a kind of thing.
+ *
+ * Not every question is a path. "What alerts are set up in AWS" is a filtered
+ * list, and answering it with a traversal would be perverse.
+ */
+const KIND_WORDS: Array<[RegExp, string]> = [
+  [/\balerts?\b|\balarms?\b/i, 'alert'],
+  [/\bpipelines?\b|\bci\b|\bcd\b|\bbuilds?\b/i, 'pipeline'],
+  [/\bdatabases?\b|\bdatastores?\b/i, 'datastore'],
+  [/\bcaches?\b/i, 'cache'],
+  [/\bqueues?\b|\btopics?\b/i, 'queue'],
+  [/\bservices?\b/i, 'service'],
+  [/\bclients?\b|\bfrontends?\b|\buis?\b/i, 'client'],
+  [/\brepos?\b|\brepositor(y|ies)\b/i, 'repo'],
+  [/\bendpoints?\b|\broutes?\b|\bapis?\b/i, 'endpoint'],
+  [/\bcapabilit(y|ies)\b|\bfeatures?\b/i, 'capability'],
+  [/\btechnolog(y|ies)\b|\bframeworks?\b|\blibrar(y|ies)\b|\blanguages?\b/i, 'technology'],
+]
+
+const LIST_INTENT = /^(what|which|list|show me|are there)\b|\bset up\b|\bdo we have\b|\bexist\b/i
+
+export interface ListedEntity {
+  entity_id: string
+  display_name: string
+  kind: string
+  env: string
+  facts: EntityFact[]
 }
 
 export interface AskResult {
@@ -76,6 +107,31 @@ export interface AskResult {
   /** Literal facts (connect_via, secret_at, note) for every entity on a returned path. */
   facts: Record<string, EntityFact[]>
   names: Record<string, string>
+  /** Populated when the question was a "what X exist" listing rather than a path. */
+  listing?: { kind: string; entities: ListedEntity[] }
+}
+
+/** "What alerts are set up in AWS" - a filtered list, not a traversal. */
+async function tryListing(db: Db, question: string, at?: Date): Promise<AskResult['listing']> {
+  if (!LIST_INTENT.test(question.trim())) return undefined
+  const hit = KIND_WORDS.find(([re]) => re.test(question))
+  if (!hit) return undefined
+
+  const rows = await db.query<{ id: string; display_name: string; kind: string; env: string }>(
+    `select id, display_name, kind, env from entity
+      where kind = $1 and canonical_id = id order by display_name limit 200`,
+    [hit[1]],
+  )
+  if (!rows.rows.length) return undefined
+
+  const factMap = await entityFacts(db, rows.rows.map((r) => r.id), at)
+  return {
+    kind: hit[1],
+    entities: rows.rows.map((r) => ({
+      entity_id: r.id, display_name: r.display_name, kind: r.kind, env: r.env,
+      facts: factMap.get(r.id) ?? [],
+    })),
+  }
 }
 
 export async function ask(
@@ -83,7 +139,7 @@ export async function ask(
   question: string,
   opts: { minTrust?: number; at?: Date; from?: string } = {},
 ): Promise<AskResult> {
-  const template = chooseTemplate(question)
+  let template = chooseTemplate(question)
   const candidates = await findAnchors(db, opts.from ? `${opts.from} ${question}` : question)
 
   const preferred = PREFERRED_START[template]
@@ -93,7 +149,16 @@ export async function ask(
     candidates[0] ??
     null
 
-  if (!anchor) return { question, template, anchor: null, candidates, paths: [], facts: {}, names: {} }
+  // A question about a capability or a kind of data is answered by starting at
+  // the concept and walking outwards, regardless of how it was phrased.
+  if (anchor && (anchor.kind === 'capability' || anchor.kind === 'data_concept')) {
+    template = 'concept_map'
+  }
+
+  const listing = await tryListing(db, question, opts.at)
+  if (!anchor) {
+    return { question, template, anchor: null, candidates, paths: [], facts: {}, names: {}, listing }
+  }
 
   const all = await runTemplate(db, template, anchor.entity_id, { minTrust: opts.minTrust, at: opts.at })
   const paths = prunePrefixes(all).slice(0, 8)
@@ -115,6 +180,7 @@ export async function ask(
     paths,
     facts: Object.fromEntries(factMap),
     names: Object.fromEntries(nameRows.rows.map((r) => [r.id, r.display_name])),
+    listing,
   }
 }
 
@@ -128,6 +194,17 @@ export function render(result: AskResult): string {
   const out: string[] = []
   out.push(`Q: ${result.question}`)
   out.push(`   template: ${result.template}`)
+
+  if (result.listing) {
+    out.push('')
+    out.push(`── ${result.listing.entities.length} ${result.listing.kind}(s) on record ──────────────`)
+    for (const e of result.listing.entities) {
+      out.push(`   ${e.display_name}${e.env !== 'unknown' ? `  [${e.env}]` : ''}`)
+      for (const f of e.facts) out.push(`        · ${f.predicate}: ${f.value}`)
+    }
+    out.push('')
+    if (!result.anchor) return out.join('\n')
+  }
 
   if (!result.anchor) {
     out.push('')
