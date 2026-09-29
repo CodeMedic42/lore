@@ -202,6 +202,63 @@ link. It never asserts it — a path collision between two unrelated systems is
 entirely possible. This is the moment the graph becomes worth more than the sum of
 its parts, and it happens without anyone holding both repos in their head.
 
+## Indexing a monorepo
+
+```bash
+npm run extract -- ~/src/ui-monorepo --repo=ui-monorepo --url=https://github.com/acme/ui-monorepo
+npm run extract -- ~/src/ui-monorepo --dry-run      # see it first
+```
+
+```
+Indexed ui-monorepo in 0.2s
+  packages:   5
+  files read: 9
+  components: 7
+  facts:      37 (37 accepted, 0 rejected)
+
+cross-package composition found:
+  @acme/web/ReportsPage composes @acme/library-b/DateRangePicker
+  @acme/library-b/DateRangePicker composes @acme/library-a/TextField
+  @acme/library-b/SearchField composes @acme/library-a/TextField
+```
+
+It emits **tier-one facts only**: which packages exist, what they are built from,
+what they export, which package uses which, and which component composes which
+across a package line. Props and gotchas are not touched — those belong in a
+context file beside the code.
+
+**Identity is the interesting part.** A component is identified by
+`@acme/library-a#TextField` — the package plus its exported name. That string is
+derivable from *both* sides of a boundary: the package that exports it, and any
+file that imports it. So a scan of the library and a scan of an app consuming it
+independently produce byte-identical identifiers, and component resolution stops
+being a name-similarity guess and becomes a uniqueness constraint.
+
+Scanning is deliberately lightweight — no compiler API, no tree-sitter. The facts
+it needs are legible from the text, and it leans on **imports**, because an import
+is the one thing a file states explicitly about the world outside itself.
+
+The whole scan runs under one scope key, so re-running closes what has been
+deleted rather than leaving it to haunt the graph:
+
+```
+Indexed ui-monorepo in 0.1s
+  components: 5
+  removed:    2 fact(s) no longer present in the code
+```
+
+Then the questions work:
+
+```
+$ npm run ask -- "what depends on TextField"
+   TextField ──composes⁻¹──▶ SearchField
+   TextField ──composes⁻¹──▶ DateRangePicker
+   DateRangePicker ──composes⁻¹──▶ ReportsPage
+```
+
+Three packages deep — the answer a library author cannot get from inside their own
+package.
+
 ## Two tiers: the graph, and context files
 
 Some knowledge is global and rare-changing. Some is local and changes every sprint.

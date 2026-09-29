@@ -125,6 +125,11 @@ const KIND_VALUE: Record<string, number> = {
   cloud_resource: 5,
   queue: 4,
   cache: 3,
+  // reaching a consumer is the point of a blast-radius walk, and reaching the
+  // component a thing is built from is the point of a provenance walk
+  component: 3,
+  client: 3,
+  package: 2,
   iac_module: 2,
   repo: 1,
 }
@@ -216,6 +221,8 @@ export const TEMPLATES = {
     forward: [
       'calls', 'reads_from', 'caches_in', 'falls_back_to', 'subscribes_to',
       'writes_to', 'provisioned_by', 'deployed_to', 'lives_in_repo',
+      // what a component is built out of
+      'composes', 'depends_on_package', 'part_of', 'variant_of',
     ],
     // From an endpoint, step back to the service that serves it.
     reverse: ['exposes_endpoint', 'publishes_to'],
@@ -225,9 +232,16 @@ export const TEMPLATES = {
   /** "What breaks if I change this?" */
   blast_radius: {
     forward: [],
-    reverse: ['calls', 'reads_from', 'writes_to', 'caches_in', 'subscribes_to', 'publishes_to', 'depends_on', 'exposes_endpoint'],
+    reverse: [
+      'calls', 'reads_from', 'writes_to', 'caches_in', 'subscribes_to', 'publishes_to',
+      'depends_on', 'exposes_endpoint',
+      // "I am about to change this component — what breaks?" walks composition and
+      // package dependency backwards, which is the question a library author asks
+      // most often and cannot answer from inside their own package.
+      'composes', 'depends_on_package', 'exports', 'variant_of',
+    ],
     maxDepth: 5,
-    terminals: ['client', 'service', 'endpoint'],
+    terminals: ['client', 'service', 'endpoint', 'component', 'package'],
   },
   /**
    * "How does authentication work?" / "Where is patient data stored?"
@@ -241,7 +255,7 @@ export const TEMPLATES = {
       'calls', 'reads_from', 'writes_to', 'caches_in', 'falls_back_to', 'subscribes_to',
       'publishes_to', 'exposes_endpoint', 'provisioned_by', 'deployed_to', 'lives_in_repo',
     ],
-    reverse: ['implements', 'handles_data', 'exposes_endpoint'],
+    reverse: ['implements', 'handles_data', 'exposes_endpoint', 'composes', 'exports'],
     maxDepth: 6,
     terminals: ['datastore', 'cache', 'queue', 'cloud_resource', 'service', 'client', 'endpoint', 'repo'],
   },

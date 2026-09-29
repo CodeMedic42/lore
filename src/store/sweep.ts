@@ -28,12 +28,30 @@ export async function sweepScope(db: Db, scopeKey: string, runStart: Date): Prom
   return r.rows.length
 }
 
+export interface SweepSummary {
+  /** Assertion rows closed. Mostly the previous run's, superseded by this one. */
+  closedAssertions: number
+  /** Edges that lost ALL support and are therefore gone from the graph.
+   *  This is the number worth reporting: things that really left the code. */
+  removedEdges: number
+}
+
 /** Begin a scoped run: returns the sweep you must call when the run completes. */
 export function beginScopedRun(db: Db, scopeKey: string, now: Date) {
   return {
     scopeKey,
-    async finish(): Promise<number> {
-      return sweepScope(db, scopeKey, now)
+    async finish(): Promise<SweepSummary> {
+      const closedAssertions = await sweepScope(db, scopeKey, now)
+      // A re-asserted fact has a fresh assertion and is still live, so counting
+      // closed rows would report every scan as a mass deletion. What matters is
+      // how many propositions this scope no longer supports at all.
+      const gone = await db.query<{ n: string }>(
+        `select count(*)::text as n
+           from (select distinct proposition_id from assertion where scope_key = $1) x
+          where not exists (select 1 from edge_now e where e.proposition_id = x.proposition_id)`,
+        [scopeKey],
+      )
+      return { closedAssertions, removedEdges: Number(gone.rows[0]?.n ?? 0) }
     },
   }
 }
