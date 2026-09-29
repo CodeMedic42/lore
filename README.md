@@ -257,6 +257,60 @@ Every failure mode still answers something useful:
 | `path_missing` | The recorded location is stale; it moved |
 | `no_source` | Nothing records where this lives, and here is what would fix that |
 
+### Writing them
+
+The agent writes the prose — it is the language model, so nothing here calls out to
+one. `draft_context` gathers the material; `write_context` persists it correctly.
+
+```bash
+$ npm run context -- draft "TextField"
+Refreshing src/components/TextField.context.md. Update what changed; keep everything still accurate.
+source: src/components/TextField.tsx
+HEAD: 18fe8e8
+
+already in the graph:
+  TextField part_of library-a
+  SearchField composes TextField
+
+commits since written:
+  c59caec Tweak TextField
+  c49e462 Add startAdornment and onBlur to TextField
+
+existing context (895 chars) — refresh, do not replace
+```
+
+Three things that draft deliberately does:
+
+- **Hands back the existing body**, because a refresh should update what changed and
+  leave hand-written gotchas alone. Regenerating from scratch quietly discards what
+  someone learned the hard way.
+- **Shows the diff since `generated_from`**, not just the current source — the
+  question is what changed, not what exists.
+- **Lists what the graph already holds**, so it does not get duplicated into the file
+  and drift.
+
+`write_context` handles the mechanics: where the file goes, `describes` relative to
+it, stamping `generated_from` with HEAD, and preserving frontmatter a human added.
+Losing someone's `owner:` line on every refresh is the kind of small betrayal that
+stops people maintaining these at all. It refuses to write anything not ending in
+`.context.md`, and refuses to write outside the repository.
+
+### Committing code and context together does not read as stale
+
+The obvious implementation gets this wrong. If you commit `TextField.tsx` and
+`TextField.context.md` in one commit — the correct workflow — a naive
+`git log <sha>..HEAD` counts that commit and reports the file one behind
+immediately. Every well-maintained file would cry wolf on every commit, and within
+a week nobody reads the warning.
+
+So commits that also touched the context file are excluded. Verified:
+
+| | Result |
+|---|---|
+| Context committed on its own | up to date |
+| Code **and** context in one commit | up to date |
+| Code changed, context untouched | `WARNING: 1 commit(s) have touched the described files` |
+
 Register a checkout so files can be read:
 
 ```bash
@@ -283,6 +337,8 @@ Six tools:
 |---|---|
 | `ask_knowledge` | A question in plain English, answered across repo boundaries with evidence |
 | `load_context` | Follow the pointer and load the dense detail beside the code |
+| `draft_context` | Gather source, existing context, and the diff since it was written |
+| `write_context` | Persist a context file with correct frontmatter and stamp |
 | `lookup_entity` | Everything known about one thing, and what it connects to |
 | `record_observations` | Record durable facts the agent learned |
 | `record_statement` | Record what the user said, in their words |

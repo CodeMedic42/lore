@@ -23,6 +23,7 @@ import { entityFacts, runTemplate, TEMPLATES, type TemplateName } from '../query
 import { renderAsk, renderFacts, renderGaps, renderIngest, renderPaths } from './format.ts'
 import { tracked } from '../store/activity.ts'
 import { loadContext } from '../context/load.ts'
+import { draftMaterial, writeContext } from '../context/write.ts'
 
 export function createMcpServer(db: Db): McpServer {
 /**
@@ -360,6 +361,99 @@ server.registerTool('load_context', {
       truncated: Boolean(r.truncated),
       body_chars: r.content?.length ?? 0,
     },
+  }
+}))
+
+server.registerTool('draft_context', {
+  title: 'Gather what you need to write a context file',
+  description: [
+    'Collects the raw material for writing or refreshing a context file: the source',
+    'as it stands, the existing context file if there is one, what has changed since',
+    'that file was written, and what the graph already records.',
+    '',
+    'YOU write the prose — this only gathers. Then call write_context with the body.',
+    '',
+    'When an existing file comes back, REFRESH it rather than replacing it. Update',
+    'what the diff shows changed and leave the rest alone; someone learned those',
+    'gotchas the hard way and regenerating from scratch quietly throws them away.',
+    '',
+    'What belongs in a context file: props and their types, which are required,',
+    'defaults, variants, sub-components used, usage examples, and the gotchas that',
+    'are not obvious from the signature.',
+    '',
+    'What does NOT: anything the graph already holds (shown back to you as',
+    '`graphFacts`). Facts that cross a boundary — what exports this, what composes',
+    'it — belong in the graph, and duplicating them here guarantees they drift apart.',
+  ].join('\n'),
+  inputSchema: {
+    name: z.string().describe('Component, module or service to document'),
+    since: z.string().optional()
+      .describe("Commit or ref to diff from. Defaults to the file's own generated_from, i.e. everything since it was last written."),
+    include_pending: z.boolean().optional()
+      .describe('Include uncommitted working-tree changes, for documenting work in progress'),
+    max_chars: z.number().int().min(500).max(40000).optional(),
+  },
+}, trace('draft_context', async ({ name, since, include_pending, max_chars }: any) => {
+  const m = await draftMaterial(db, name, { since, includePending: include_pending, maxChars: max_chars })
+  if (!m.ok) {
+    return { content: [{ type: 'text' as const, text: m.message }], isError: true, summary: { ok: false } }
+  }
+
+  const parts: string[] = [m.message]
+  parts.push(`Source: ${m.sourcePath}\nContext file: ${m.contextPath}\nHEAD: ${m.headCommit}`)
+  if (m.dirty) parts.push('NOTE: the described files have uncommitted changes.')
+  if (m.graphFacts?.length) {
+    parts.push(`Already in the graph — do NOT repeat these in the file:\n${m.graphFacts.map((f) => `  ${f}`).join('\n')}`)
+  }
+  if (m.existing) parts.push(`--- EXISTING CONTEXT (refresh, do not replace) ---\n${m.existing}`)
+  if (m.commitSubjects?.length) {
+    parts.push(`--- COMMITS SINCE IT WAS WRITTEN ---\n${m.commitSubjects.join('\n')}`)
+  }
+  if (m.changedSince) parts.push(`--- DIFF SINCE IT WAS WRITTEN ---\n${m.changedSince}`)
+  if (m.pendingDiff) parts.push(`--- UNCOMMITTED CHANGES ---\n${m.pendingDiff}`)
+  parts.push(`--- CURRENT SOURCE ---\n${m.source}`)
+
+  return {
+    content: [{ type: 'text' as const, text: parts.join('\n\n') }],
+    summary: {
+      ok: true,
+      refresh: Boolean(m.existing),
+      commits_since: m.commitSubjects?.length ?? 0,
+      dirty: Boolean(m.dirty),
+      source_chars: m.source?.length ?? 0,
+      graph_facts: m.graphFacts?.length ?? 0,
+    },
+  }
+}))
+
+server.registerTool('write_context', {
+  title: 'Write or refresh a context file',
+  description: [
+    'Persist a context file beside the code it describes. Call draft_context first.',
+    '',
+    'Pass the markdown body only — no frontmatter. This handles where the file goes,',
+    'the `describes` path relative to it, stamping `generated_from` with the current',
+    'commit so staleness stays checkable, and preserving any frontmatter a human',
+    'added.',
+    '',
+    'Tell the user what you wrote and remind them to commit it ALONGSIDE the code',
+    'change. Committed together, the file reads as current; committed later, it looks',
+    'a commit behind.',
+  ].join('\n'),
+  inputSchema: {
+    name: z.string().describe('The thing being documented'),
+    body: z.string().describe('Markdown body, no frontmatter — that is added for you'),
+    path: z.string().optional().describe('Override the target path. Must end in .context.md.'),
+    describes: z.array(z.string()).optional().describe('Files this documents, relative to the context file'),
+  },
+}, trace('write_context', async ({ name, body, path, describes }: any) => {
+  const r = await writeContext(db, { target: name, body, path, describes })
+  const lines = [r.message]
+  for (const w of r.warnings) lines.push(`WARNING: ${w}`)
+  return {
+    content: [{ type: 'text' as const, text: lines.join('\n') }],
+    isError: !r.ok,
+    summary: { ok: r.ok, created: r.created, warnings: r.warnings.length, body_chars: body.length },
   }
 }))
 

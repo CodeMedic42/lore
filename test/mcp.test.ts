@@ -25,8 +25,8 @@ test('the server advertises the tools an agent needs', async () => {
   const { tools } = await client.listTools()
   const names = tools.map((t) => t.name).sort()
   assert.deepEqual(names, [
-    'answer_question', 'ask_knowledge', 'load_context', 'lookup_entity',
-    'pending_questions', 'record_observations', 'record_statement',
+    'answer_question', 'ask_knowledge', 'draft_context', 'load_context', 'lookup_entity',
+    'pending_questions', 'record_observations', 'record_statement', 'write_context',
   ])
   // The descriptions are how the model learns what is worth recording.
   const record = tools.find((t) => t.name === 'record_observations')!
@@ -258,6 +258,11 @@ test('load_context reaches the detail beside the code, and reports its freshness
   const sha = (await run('git', ['rev-parse', '--short', 'HEAD'], { cwd: dir })).stdout.trim()
   await writeFile(join(dir, 'src', 'TextField.context.md'),
     `---\ndescribes: ./TextField.tsx\ngenerated_from: ${sha}\n---\n\nonChange receives the value, not the event.\n`)
+  // Commit the context on its own. If it rode along with the next commit, that
+  // commit would count as having updated it - which is the behaviour we rely on
+  // elsewhere, but would defeat the point of this test.
+  await run('git', ['add', '-A'], { cwd: dir })
+  await run('git', ['commit', '-q', '-m', 'context'], { cwd: dir })
 
   const db = await freshDb()
   const { registerRepo } = await import('../src/context/locate.ts')

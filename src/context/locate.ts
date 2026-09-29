@@ -184,6 +184,7 @@ export async function freshness(
   repoPath: string,
   generatedFrom: string | undefined,
   describedPaths: string[],
+  contextPath?: string,
 ): Promise<Freshness> {
   if (!generatedFrom) {
     return { checked: false, reason: 'no `generated_from` commit recorded in the file' }
@@ -192,10 +193,24 @@ export async function freshness(
     return { checked: false, reason: 'not a git checkout, cannot compare commits' }
   }
   try {
-    const args = ['log', '--oneline', `${generatedFrom}..HEAD`, '--']
     const paths = describedPaths.length ? describedPaths : ['.']
-    const { stdout } = await run('git', [...args, ...paths], { cwd: repoPath, timeout: 10_000 })
-    const commits = stdout.split('\n').filter(Boolean)
+    const { stdout } = await run(
+      'git', ['log', '--format=%H', `${generatedFrom}..HEAD`, '--', ...paths],
+      { cwd: repoPath, timeout: 10_000 },
+    )
+    let commits = stdout.split('\n').filter(Boolean)
+
+    // A commit that updated the context file alongside the code did not leave the
+    // context behind - it is the normal way of working, and counting it would make
+    // every properly-maintained file report itself stale the moment it was committed.
+    if (contextPath && commits.length) {
+      const { stdout: ctx } = await run(
+        'git', ['log', '--format=%H', `${generatedFrom}..HEAD`, '--', contextPath],
+        { cwd: repoPath, timeout: 10_000 },
+      )
+      const updatedAlongside = new Set(ctx.split('\n').filter(Boolean))
+      commits = commits.filter((c) => !updatedAlongside.has(c))
+    }
     if (!commits.length) return { checked: true, commitsBehind: 0 }
 
     const { stdout: files } = await run(

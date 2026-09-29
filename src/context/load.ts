@@ -117,7 +117,7 @@ export async function loadContext(
       const described = parsed.frontmatter.describes.length
         ? parsed.frontmatter.describes.map((d) => resolveRelative(candidate, d))
         : [ref.path]
-      const fresh = await freshness(loc.localPath, parsed.frontmatter.generatedFrom, described)
+      const fresh = await freshness(loc.localPath, parsed.frontmatter.generatedFrom, described, candidate)
 
       const truncated = parsed.body.length > maxChars
       return {
