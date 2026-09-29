@@ -15,12 +15,14 @@
     "report": "tsx src/cli/report.ts",
     "context": "tsx src/cli/context.ts",
     "extract": "tsx src/cli/extract.ts",
+    "embed": "tsx src/cli/embed.ts",
     "reset": "rm -rf .data && tsx src/cli/migrate.ts",
     "typecheck": "tsc --noEmit",
     "test": "node --test --experimental-strip-types test/*.test.ts"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.5.8",
+    "@huggingface/transformers": "^4.3.0",
     "@modelcontextprotocol/sdk": "^1.31.0",
     "pg": "^8.23.0"
   },

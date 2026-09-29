@@ -1,6 +1,8 @@
 import type { Db } from '../db/index.ts'
 import { normaliseName } from '../resolver/entity_resolver.ts'
 import { entityFacts, prunePrefixes, runTemplate, type EntityFact, type FoundPath, type TemplateName } from './traverse.ts'
+import type { Embedder } from '../embed/index.ts'
+import { findSimilar } from '../embed/search.ts'
 
 export interface Anchor {
   entity_id: string
@@ -19,7 +21,12 @@ export interface Anchor {
  * return plausible, disconnected facts - which is precisely what this system
  * exists to avoid.
  */
-export async function findAnchors(db: Db, question: string, limit = 5): Promise<Anchor[]> {
+export async function findAnchors(
+  db: Db,
+  question: string,
+  limit = 5,
+  opts: { embedder?: Embedder } = {},
+): Promise<Anchor[]> {
   const q = `-${normaliseName(question)}-`
   const rows = await db.query<{ entity_id: string; name_norm: string; display_name: string; kind: string; env: string }>(
     `select a.entity_id, a.name_norm, e.display_name, e.kind, e.env
@@ -60,10 +67,26 @@ export async function findAnchors(db: Db, question: string, limit = 5): Promise<
   }
 
   const seen = new Set<string>()
-  return hits
+  const byName = hits
     .sort((a, b) => b.score - a.score)
     .filter((h) => (seen.has(h.entity_id) ? false : (seen.add(h.entity_id), true)))
     .slice(0, limit)
+
+  // Semantic matching is a LAST RESORT, never a competitor to an exact match.
+  // A question that names something gets that thing; only a question that names
+  // nothing the graph knows falls through to "what does this sound like?".
+  if (byName.length || !opts.embedder) return byName
+
+  const similar = await findSimilar(db, opts.embedder, question, { limit, minScore: 0.3 })
+  return similar.map((s) => ({
+    entity_id: s.entityId,
+    display_name: s.name,
+    kind: s.kind,
+    env: s.env,
+    matched: 'semantic',
+    // Kept below any real name match, so ranking still prefers certainty.
+    score: s.score,
+  }))
 }
 
 const INTENT: Array<{ re: RegExp; template: TemplateName }> = [
@@ -154,10 +177,11 @@ async function tryListing(db: Db, question: string, at?: Date): Promise<AskResul
 export async function ask(
   db: Db,
   question: string,
-  opts: { minTrust?: number; at?: Date; from?: string } = {},
+  opts: { minTrust?: number; at?: Date; from?: string; embedder?: Embedder } = {},
 ): Promise<AskResult> {
   let template = chooseTemplate(question)
-  const candidates = await findAnchors(db, opts.from ? `${opts.from} ${question}` : question)
+  const candidates = await findAnchors(
+    db, opts.from ? `${opts.from} ${question}` : question, 5, { embedder: opts.embedder })
 
   const preferred = PREFERRED_START[template]
   const anchor =

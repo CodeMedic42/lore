@@ -25,8 +25,9 @@ test('the server advertises the tools an agent needs', async () => {
   const { tools } = await client.listTools()
   const names = tools.map((t) => t.name).sort()
   assert.deepEqual(names, [
-    'answer_question', 'ask_knowledge', 'draft_context', 'load_context', 'lookup_entity',
-    'pending_questions', 'record_observations', 'record_statement', 'write_context',
+    'answer_question', 'ask_knowledge', 'draft_context', 'find_similar', 'load_context',
+    'lookup_entity', 'pending_questions', 'record_observations', 'record_statement',
+    'write_context',
   ])
   // The descriptions are how the model learns what is worth recording.
   const record = tools.find((t) => t.name === 'record_observations')!

@@ -23,7 +23,8 @@ worth building only if this step convinces.
 
 ```bash
 docker start lak-pg          # or: docker run -d --name lak-pg -e POSTGRES_PASSWORD=lak \
-                             #       -e POSTGRES_USER=lak -e POSTGRES_DB=lak -p 55432:5432 postgres:18-alpine
+                             #       -e POSTGRES_USER=lak -e POSTGRES_DB=lak -p 55432:5432 \
+                             #       pgvector/pgvector:pg17
 npm install
 npx tsx src/cli/migrate.ts   # apply migrations
 npm run seed                 # hand-seed the notifications scenario
@@ -259,6 +260,55 @@ $ npm run ask -- "what depends on TextField"
 Three packages deep — the answer a library author cannot get from inside their own
 package.
 
+## Finding something whose name you don't know
+
+The one question the graph cannot answer structurally. You're about to build a date
+range picker; there is already a `CalendarRangeInput` in a package you have never
+opened. Nothing in your question contains that string.
+
+```bash
+npm run embed -- index                                  # first run downloads ~25MB
+npm run embed -- "let the user pick a start and end date" --kinds=component
+```
+
+```
+  0.412  DateRangePicker  (component)
+         Pick a start and end date. Two text fields plus a calendar overlay.
+```
+
+Embeddings run **in-process** — `all-MiniLM-L6-v2` via transformers.js. No API key,
+no network after the first download, no per-query cost, and nothing about the
+codebase leaves the machine, which matters when it is an employer's.
+
+The extractor captures doc comments for exactly this reason: `DateRangePicker` is
+thin material to match against, while *"Pick a start and end date"* is what someone's
+question actually resembles.
+
+### Embeddings never choose a hop
+
+They pick the **entry point**, and nothing else. Vector search over a graph returns
+plausible, disconnected facts; the value here is the connected path. So the
+resolution order in `ask` is exact name → token overlap → *then* semantics, and only
+when the first two found nothing:
+
+```
+$ npm run ask -- "is there anything for choosing a date range"
+   anchor: DateRangePicker (component)          ← chosen semantically
+   DateRangePicker ──part_of──▶ @acme/library-b ← walked structurally
+   @acme/library-b ──lives_in_repo──▶ ui-monorepo
+```
+
+A question that names something gets that thing; resemblance never overrides it.
+There is a test asserting exactly that.
+
+### Storage
+
+`real[]`, not pgvector's own type, so the column works unchanged on PGlite (which
+has no vector extension — the test suite runs entirely on the in-process fallback).
+Where pgvector *is* installed it casts for free (`real[]::vector`) and does the
+distance maths in SIMD. Re-indexing hashes each profile, so a re-scan only pays for
+descriptions that actually moved.
+
 ## Two tiers: the graph, and context files
 
 Some knowledge is global and rare-changing. Some is local and changes every sprint.
@@ -393,6 +443,7 @@ Six tools:
 | Tool | For |
 |---|---|
 | `ask_knowledge` | A question in plain English, answered across repo boundaries with evidence |
+| `find_similar` | Describe what you want to build; find what already exists |
 | `load_context` | Follow the pointer and load the dense detail beside the code |
 | `draft_context` | Gather source, existing context, and the diff since it was written |
 | `write_context` | Persist a context file with correct frontmatter and stamp |

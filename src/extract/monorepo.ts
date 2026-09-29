@@ -206,9 +206,9 @@ export async function extractMonorepo(db: Db, opts: ExtractOptions): Promise<Ext
       const jsx = new Set(parseJsxUsage(text))
 
       // Components this file exports.
-      const localComponents = exports
-        .filter((e) => looksLikeComponent(e.name, file))
-        .map((e) => e.name)
+      const componentExports = exports.filter((e) => looksLikeComponent(e.name, file))
+      const localComponents = componentExports.map((e) => e.name)
+      const docFor = new Map(componentExports.filter((e) => e.doc).map((e) => [e.name, e.doc!]))
 
       for (const name of localComponents) {
         const key = `${pkg.name}#${name}`
@@ -222,6 +222,17 @@ export async function extractMonorepo(db: Db, opts: ExtractOptions): Promise<Ext
             object_identifiers: id('npm_package', pkg.name),
             evidence: [{ repo: repoKey, path: relPath }],
           })
+          // The author's own description of the thing, which is far better
+          // material for "does something like this already exist?" than a name.
+          const doc = docFor.get(name)
+          if (doc) {
+            obs.push({
+              subject: name, subject_kind: 'component',
+              subject_identifiers: id('module_export', key),
+              predicate: 'note', object_literal: doc.slice(0, 500),
+              evidence: [{ repo: repoKey, path: relPath }],
+            })
+          }
           if (isEntryPoint(file, pkg) || exports.some((e) => e.kind === 'reexport' && e.name === name)) {
             obs.push({
               subject: pkg.name, subject_kind: 'package',

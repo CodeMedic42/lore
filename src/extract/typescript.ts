@@ -24,6 +24,28 @@ export interface ExportedName {
   name: string
   kind: 'const' | 'function' | 'class' | 'default' | 'reexport' | 'type'
   line: number
+  /** Leading doc comment, if the author left one. */
+  doc?: string
+}
+
+/**
+ * The block comment immediately above a declaration.
+ *
+ * Worth the trouble because it is the only prose most components carry, and a
+ * name alone is thin material for matching "is there already something that does
+ * X?" - which is the question this whole feature exists to answer.
+ */
+export function leadingDoc(source: string, index: number): string | undefined {
+  const before = source.slice(0, index)
+  const m = /\/\*\*([\s\S]*?)\*\/\s*(?:export\s+)?$/.exec(before)
+  if (!m) return undefined
+  const text = m[1]!
+    .split('\n')
+    .map((l) => l.replace(/^\s*\*ic?/, '').replace(/^\s*\*/, '').trim())
+    .filter((l) => l && !l.startsWith('@'))
+    .join(' ')
+    .trim()
+  return text || undefined
 }
 
 /** Strip comments and strings so their contents cannot be mistaken for code. */
@@ -96,7 +118,11 @@ export function parseExports(source: string): ExportedName[] {
     for (const m of src.matchAll(re)) {
       const name = m[1]
       if (!name && kind !== 'default') continue
-      out.push({ name: name ?? 'default', kind, line: lineOf(m.index ?? 0) })
+      out.push({
+        name: name ?? 'default', kind, line: lineOf(m.index ?? 0),
+        // read the doc from the ORIGINAL source: decommenting blanked it out
+        doc: leadingDoc(source, m.index ?? 0),
+      })
     }
   }
 

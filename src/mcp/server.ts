@@ -24,8 +24,25 @@ import { renderAsk, renderFacts, renderGaps, renderIngest, renderPaths } from '.
 import { tracked } from '../store/activity.ts'
 import { loadContext } from '../context/load.ts'
 import { draftMaterial, writeContext } from '../context/write.ts'
+import { indexEmbeddings, localEmbedder, type Embedder } from '../embed/index.ts'
+import { findSimilar } from '../embed/search.ts'
 
-export function createMcpServer(db: Db): McpServer {
+export function createMcpServer(db: Db, injectedEmbedder?: Embedder): McpServer {
+/**
+ * Created on first use, never at startup. The model costs seconds to load, and an
+ * agent that only ever asks structural questions should not pay for it.
+ * Set LAK_EMBEDDINGS=off to disable similarity entirely.
+ */
+let embedderInstance: Embedder | null = injectedEmbedder ?? null
+const embedder = (): Embedder | undefined => {
+  // An embedder passed in explicitly always wins: LAK_EMBEDDINGS=off means
+  // "do not load the model", not "ignore what the caller handed you".
+  if (embedderInstance) return embedderInstance
+  if (process.env.LAK_EMBEDDINGS === 'off') return undefined
+  embedderInstance = localEmbedder()
+  return embedderInstance
+}
+
 /**
  * Wrap a tool handler so every call is timed and logged.
  * The summary carries counts and vocabulary only - never names or content.
@@ -135,6 +152,8 @@ server.registerTool('ask_knowledge', {
   const result = await ask(db, question, {
     minTrust: min_trust,
     at: as_of ? new Date(as_of) : undefined,
+    // Only consulted when nothing in the question names something known.
+    embedder: embedder(),
   })
   return {
     content: [{ type: 'text' as const, text: renderAsk(result) }],
@@ -361,6 +380,59 @@ server.registerTool('load_context', {
       truncated: Boolean(r.truncated),
       body_chars: r.content?.length ?? 0,
     },
+  }
+}))
+
+server.registerTool('find_similar', {
+  title: 'Find something that already exists',
+  description: [
+    'Describe what you are about to build, and get back things already in the',
+    'codebase that resemble it.',
+    '',
+    'Use this BEFORE writing a new component, module or service. The whole point is',
+    'that the thing worth reusing usually lives in a package the user is not working',
+    'in and whose name nobody remembers — a search for "date range" finds nothing',
+    'because the component is called CalendarRangeInput.',
+    '',
+    'Describe behaviour, not names: "lets the user pick a start and end date" beats',
+    '"date picker". Scores are cosine similarity; anything below about 0.3 is a weak',
+    'match and worth saying so rather than presenting as a find.',
+    '',
+    'Follow a promising hit with load_context to get its actual API.',
+  ].join('\n'),
+  inputSchema: {
+    description: z.string().describe('What the thing you want would DO, in a sentence'),
+    kinds: z.array(z.string()).optional()
+      .describe("Restrict by entity kind, e.g. ['component'] or ['service']"),
+    limit: z.number().int().min(1).max(25).optional(),
+  },
+}, trace('find_similar', async ({ description, kinds, limit }: any) => {
+  const e = embedder()
+  if (!e) {
+    return {
+      content: [{ type: 'text' as const, text: 'Similarity search is disabled (LAK_EMBEDDINGS=off).' }],
+      isError: true, summary: { disabled: true },
+    }
+  }
+  const hits = await findSimilar(db, e, description, { kinds, limit: limit ?? 8 })
+  if (!hits.length) {
+    return {
+      content: [{ type: 'text' as const, text:
+        'Nothing similar on record. Either it does not exist yet, or nothing has been indexed — ' +
+        'a repository has to be scanned and embedded before this can answer.' }],
+      summary: { hits: 0 },
+    }
+  }
+  const lines = [`Existing things that resemble "${description}":`, '']
+  for (const h of hits) {
+    const strength = h.score >= 0.5 ? 'strong' : h.score >= 0.35 ? 'moderate' : 'weak'
+    lines.push(`- ${h.name} (${h.kind}) — ${strength} match, ${h.score.toFixed(2)}`)
+    lines.push(`    ${h.profile.slice(0, 220)}`)
+  }
+  lines.push('', 'Call load_context on any of these for its actual API before suggesting reuse.')
+  return {
+    content: [{ type: 'text' as const, text: lines.join('\n') }],
+    summary: { hits: hits.length, top_score: hits[0]?.score ?? 0, kinds: kinds ?? null },
   }
 }))
 
