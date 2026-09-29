@@ -8,6 +8,8 @@ import { ask, findAnchors } from '../query/ask.ts'
 import { checkFileAnchors, reverificationQueue } from '../store/anchors.ts'
 import { askableQuestions, joinCandidates, knowledgeGaps } from '../query/gaps.ts'
 import { maintain } from '../store/maintain.ts'
+import { tell } from '../store/tell.ts'
+import { answerGap } from '../store/answers.ts'
 
 type Handler = (ctx: {
   db: Db
@@ -42,6 +44,34 @@ route('POST', '/v1/observations', async ({ db, body }) => {
   const result = await ingest(db, envelope)
   // Resolution hints let the agent cheaply correct a bad match on its next call.
   return { status: 202, body: result }
+})
+
+/**
+ * Free text in, claims out. Expect agents to reach for this far more often than
+ * the structured form, because it is what a user actually says.
+ */
+route('POST', '/v1/observations/text', async ({ db, body }) => {
+  const text = String(body?.text ?? '')
+  if (!text) return { status: 400, body: { error: '`text` is required' } }
+  const result = await tell(db, {
+    text,
+    agent: body?.agent, session: body?.session, repo: body?.repo, env: body?.env,
+    method: body?.method, impliedSubject: body?.implied_subject, dryRun: Boolean(body?.dry_run),
+  })
+  return { status: body?.dry_run ? 200 : 202, body: result }
+})
+
+/** Answer a question the graph asked. The gap is identified by kind + entity. */
+route('POST', '/v1/gaps/answer', async ({ db, body }) => {
+  const { gap_kind, entity_id, answer } = body ?? {}
+  if (!gap_kind || !entity_id || !answer) {
+    return { status: 400, body: { error: '`gap_kind`, `entity_id` and `answer` are required' } }
+  }
+  await maintain(db)
+  const gap = (await knowledgeGaps(db)).find(
+    (g) => g.gap_kind === gap_kind && g.entity_id === entity_id)
+  if (!gap) return { status: 404, body: { error: 'no such open gap' } }
+  return { body: await answerGap(db, gap, String(answer)) }
 })
 
 // ---------------------------------------------------------------------------

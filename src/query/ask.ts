@@ -27,18 +27,35 @@ export async function findAnchors(db: Db, question: string, limit = 5): Promise<
       where e.canonical_id = e.id`,
   )
 
+  // Word-level view of the question, lightly stemmed, so "list of notifications"
+  // can reach an entity called "notification list". Exact phrase matches still
+  // outrank these - word order carries real information when it is present.
+  const stem = (w: string) => w.replace(/(ies)$/, 'y').replace(/(?<=..)s$/, '')
+  const qWords = new Set(
+    normaliseName(question).split('-').filter(Boolean).map(stem))
+
   const hits: Anchor[] = []
   for (const r of rows.rows) {
     if (!r.name_norm) continue
-    if (!q.includes(`-${r.name_norm}-`)) continue
+
+    if (q.includes(`-${r.name_norm}-`)) {
+      hits.push({
+        entity_id: r.entity_id, display_name: r.display_name, kind: r.kind, env: r.env,
+        matched: r.name_norm,
+        // Longer, more specific names win; prod beats unknown when both match.
+        score: r.name_norm.length + (r.env === 'prod' ? 1 : 0),
+      })
+      continue
+    }
+
+    // Every word of the entity's name present in the question, in any order.
+    const words = r.name_norm.split('-').filter(Boolean).map(stem)
+    if (words.length < 2 || !words.some((w) => w.length >= 4)) continue
+    if (!words.every((w) => qWords.has(w))) continue
     hits.push({
-      entity_id: r.entity_id,
-      display_name: r.display_name,
-      kind: r.kind,
-      env: r.env,
+      entity_id: r.entity_id, display_name: r.display_name, kind: r.kind, env: r.env,
       matched: r.name_norm,
-      // Longer, more specific names win; prod beats unknown when both match.
-      score: r.name_norm.length + (r.env === 'prod' ? 1 : 0),
+      score: (r.name_norm.length + (r.env === 'prod' ? 1 : 0)) * 0.7,
     })
   }
 

@@ -32,6 +32,8 @@ npm run ask -- "how does authentication work for this client"
 npm run ask -- "what alerts are set up in AWS"
 npm run gaps                 # what the assistant should ask you next
 npm run gaps -- --all        # every detected hole, ranked
+npm run tell -- "svc-a reads from billing-db"   # just say it in English
+npm run answer               # list its questions; answer by number
 npm run serve                # HTTP API on :4310
 npm test                     # 15 invariant tests, run on in-process PGlite
 ```
@@ -199,6 +201,66 @@ endpoint entities until something notices they are the same route.
 link. It never asserts it — a path collision between two unrelated systems is
 entirely possible. This is the moment the graph becomes worth more than the sum of
 its parts, and it happens without anyone holding both repos in their head.
+
+## Telling it things, and answering its questions
+
+```bash
+npm run tell -- "the new-notification-client is written in TypeScript and uses \
+                 Angular, it replaces notification-client and is built with Vite"
+
+Recorded:
+  new-notification-client ──written_in──▶ TypeScript
+  new-notification-client ──uses_framework──▶ Angular
+  new-notification-client ──supersedes──▶ notification-client
+  new-notification-client ──built_with──▶ Vite
+```
+
+The parser is deterministic and deliberately modest. It reads the statements people
+actually make about systems, carries a subject forward across "it", splits a chained
+sentence into separate claims, and **declines anything it cannot parse confidently**
+rather than inventing structure — unrecognised text comes back verbatim.
+
+Two behaviours are worth calling out.
+
+**Negation refutes, it does not delete.**
+
+```bash
+npm run tell -- "notification-client no longer uses Webpack"
+  notification-client ──built_with──▶ Webpack  [REFUTES]
+```
+
+The original claim stays on record with its provenance; trust drops from 0.95 to
+0.19 because one source now contradicts another. Note also that "uses" is
+ambiguous, so it deferred to the relation the graph already held — `built_with`,
+not `uses_framework` — which is what makes the contradiction land on the right
+claim instead of inventing a parallel one to argue with.
+
+**Answering is easier than parsing.** Because the system knows what it asked, the
+subject and usually the predicate are already settled and only the value has to be
+understood. So a one-word reply works:
+
+```bash
+npm run answer
+  1. Are "new-notification-client" and "notification-client" the same thing?
+  2. Is GET {notifications-service-url}/v1/notifications (called by
+     notification-client) the same route as GET /v1/notifications, served by
+     notifications-service?
+
+npm run answer -- 1 "no, they are different clients"   → recorded as permanently distinct
+npm run answer -- 1 "yes"                              → joined
+```
+
+That second answer is the whole point. Before it, the client's call site and the
+service's route definition were unrelated records in two repositories. After one
+word, the traversal runs end to end across three repos:
+
+```
+notification-client ──calls──▶ GET /v1/notifications
+GET /v1/notifications ──exposes_endpoint⁻¹──▶ notifications-service
+notifications-service ──reads_from──▶ notifications-db
+notifications-db ──provisioned_by──▶ notifications-infra
+notifications-infra ──lives_in_repo──▶ platform-terraform
+```
 
 ## Three ways knowledge arrives
 
