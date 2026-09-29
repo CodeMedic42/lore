@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "knowledge": {
+      "command": "node",
+      "args": ["src/mcp/stdio.ts"],
+      "env": {}
+    }
+  }
+}

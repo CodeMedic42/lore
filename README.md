@@ -202,6 +202,41 @@ link. It never asserts it — a path collision between two unrelated systems is
 entirely possible. This is the moment the graph becomes worth more than the sum of
 its parts, and it happens without anyone holding both repos in their head.
 
+## Using it from Claude Code (MCP)
+
+`.mcp.json` in this repo registers the server, so Claude Code offers to connect it
+when you open the project. Or add it yourself:
+
+```bash
+claude mcp add knowledge -- node /absolute/path/to/src/mcp/stdio.ts
+```
+
+It runs on plain `node` — Node 24 strips the types, so there is no build step and
+no `tsx` in the hot path. It talks to the same core the HTTP API wraps, so there is
+one implementation of the rules. Point `DATABASE_URL` at a shared Postgres and a
+whole team's agents write into one graph; leave it at the default and it is yours.
+
+Six tools:
+
+| Tool | For |
+|---|---|
+| `ask_knowledge` | A question in plain English, answered across repo boundaries with evidence |
+| `lookup_entity` | Everything known about one thing, and what it connects to |
+| `record_observations` | Record durable facts the agent learned |
+| `record_statement` | Record what the user said, in their words |
+| `pending_questions` | What the graph is missing and should ask about |
+| `answer_question` | Apply the user's answer |
+
+The tool descriptions do real work here — they are where the model learns *what is
+worth recording*: things that cross a repository boundary, how data actually flows,
+what things are built from, what they are for. And what is not: the body of a
+function, anything a refactor invalidates next week, a dump of a lockfile.
+
+The write path teaches as it goes. Record something under a name the graph has not
+seen and the response says so, and suggests supplying a `git_remote` or `arn` next
+time so it resolves instead of duplicating — which is the single biggest threat to
+a graph like this being useful.
+
 ## Telling it things, and answering its questions
 
 ```bash
