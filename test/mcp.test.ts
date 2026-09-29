@@ -25,7 +25,7 @@ test('the server advertises the tools an agent needs', async () => {
   const { tools } = await client.listTools()
   const names = tools.map((t) => t.name).sort()
   assert.deepEqual(names, [
-    'answer_question', 'ask_knowledge', 'lookup_entity',
+    'answer_question', 'ask_knowledge', 'load_context', 'lookup_entity',
     'pending_questions', 'record_observations', 'record_statement',
   ])
   // The descriptions are how the model learns what is worth recording.
@@ -236,6 +236,70 @@ test('looking up one thing returns its neighbourhood and facts', async () => {
   const text = textOf(r)
   assert.match(text, /orders-db — datastore/)
   assert.match(text, /psql -h orders\.internal/)
+  await db.close()
+})
+
+test('load_context reaches the detail beside the code, and reports its freshness', async () => {
+  const { mkdtemp, mkdir, writeFile, rm } = await import('node:fs/promises')
+  const { tmpdir } = await import('node:os')
+  const { join } = await import('node:path')
+  const { execFile } = await import('node:child_process')
+  const { promisify } = await import('node:util')
+  const run = promisify(execFile)
+
+  const dir = await mkdtemp(join(tmpdir(), 'lak-mcp-ctx-'))
+  await mkdir(join(dir, 'src'), { recursive: true })
+  await writeFile(join(dir, 'src', 'TextField.tsx'), 'export const TextField = () => null\n')
+  await run('git', ['init', '-q'], { cwd: dir })
+  await run('git', ['config', 'user.email', 't@example.com'], { cwd: dir })
+  await run('git', ['config', 'user.name', 'T'], { cwd: dir })
+  await run('git', ['add', '-A'], { cwd: dir })
+  await run('git', ['commit', '-q', '-m', 'init'], { cwd: dir })
+  const sha = (await run('git', ['rev-parse', '--short', 'HEAD'], { cwd: dir })).stdout.trim()
+  await writeFile(join(dir, 'src', 'TextField.context.md'),
+    `---\ndescribes: ./TextField.tsx\ngenerated_from: ${sha}\n---\n\nonChange receives the value, not the event.\n`)
+
+  const db = await freshDb()
+  const { registerRepo } = await import('../src/context/locate.ts')
+  await registerRepo(db, { repoKey: 'library-a', localPath: dir })
+  await ingest(db, { method: 'code_derived', env: 'prod', repo: 'library-a', observations: [
+    { subject: 'library-a', subject_kind: 'package', predicate: 'lives_in_repo',
+      object: 'library-a', object_kind: 'repo' },
+    { subject: 'TextField', subject_kind: 'component', predicate: 'part_of',
+      object: 'library-a', object_kind: 'package',
+      evidence: [{ repo: 'library-a', path: 'src/TextField.tsx' }] },
+  ] })
+
+  const client = await connect(db)
+  const r = await client.callTool({ name: 'load_context', arguments: { name: 'TextField' } })
+  const text = textOf(r)
+  assert.match(text, /onChange receives the value/, 'the detail comes from the file, not the graph')
+  assert.match(text, /Up to date/)
+
+  // Change the component; the same call must now warn rather than mislead.
+  await writeFile(join(dir, 'src', 'TextField.tsx'), 'export const TextField = () => null\n// changed\n')
+  await run('git', ['add', '-A'], { cwd: dir })
+  await run('git', ['commit', '-q', '-m', 'change'], { cwd: dir })
+  const stale = await client.callTool({ name: 'load_context', arguments: { name: 'TextField' } })
+  assert.match(textOf(stale), /WARNING: 1 commit/)
+
+  await rm(dir, { recursive: true, force: true })
+  await db.close()
+})
+
+test('load_context on something with no file still points at the source', async () => {
+  const db = await freshDb()
+  const client = await connect(db)
+  await ingest(db, { method: 'code_derived', env: 'prod', observations: [
+    { subject: 'library-b', subject_kind: 'repo', predicate: 'note', object_literal: 'UI lib',
+      subject_identifiers: [{ authority: 'git_remote', value: 'gitlab.com/acme/library-b' }] },
+    { subject: 'DatePicker', subject_kind: 'component', predicate: 'part_of',
+      object: 'library-b', object_kind: 'repo',
+      evidence: [{ repo: 'library-b', path: 'src/DatePicker.tsx' }] },
+  ] })
+  const r = await client.callTool({ name: 'load_context', arguments: { name: 'DatePicker' } })
+  assert.match(textOf(r), /not checked out/)
+  assert.match(textOf(r), /gitlab\.com\/acme\/library-b/)
   await db.close()
 })
 

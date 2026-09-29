@@ -28,10 +28,22 @@ export function databaseUrl(): string {
   return process.env.DATABASE_URL ?? DEFAULT_URL
 }
 
-/** Open the configured database. Set LAK_DRIVER=pglite for an in-process instance. */
+/**
+ * Open the configured database.
+ *
+ *   LAK_DRIVER=pglite   run PostgreSQL in-process, no server, no container.
+ *   LAK_DATA_DIR=path   where PGlite keeps its files. Without it the database
+ *                       lives in memory and vanishes on exit, which is right for
+ *                       tests and wrong for everything else.
+ *
+ * The pglite path exists so a machine with no Docker - a locked-down work laptop,
+ * say - can still run the whole thing with nothing but Node.
+ */
 export async function open(opts: { driver?: 'pg' | 'pglite'; url?: string; dataDir?: string } = {}): Promise<Db> {
   const driver = opts.driver ?? (process.env.LAK_DRIVER as 'pg' | 'pglite' | undefined) ?? 'pg'
-  return driver === 'pglite' ? openPglite(opts.dataDir) : openPg(opts.url ?? databaseUrl())
+  if (driver !== 'pglite') return openPg(opts.url ?? databaseUrl())
+  const dataDir = opts.dataDir ?? process.env.LAK_DATA_DIR
+  return openPglite(dataDir)
 }
 
 async function openPg(url: string): Promise<Db> {

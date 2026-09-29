@@ -21,8 +21,25 @@ import { ask, findAnchors } from '../query/ask.ts'
 import { askableQuestions, knowledgeGaps } from '../query/gaps.ts'
 import { entityFacts, runTemplate, TEMPLATES, type TemplateName } from '../query/traverse.ts'
 import { renderAsk, renderFacts, renderGaps, renderIngest, renderPaths } from './format.ts'
+import { tracked } from '../store/activity.ts'
+import { loadContext } from '../context/load.ts'
 
 export function createMcpServer(db: Db): McpServer {
+/**
+ * Wrap a tool handler so every call is timed and logged.
+ * The summary carries counts and vocabulary only - never names or content.
+ */
+const trace = <A extends Record<string, unknown>>(
+  tool: string,
+  fn: (args: A) => Promise<{ content: Array<{ type: 'text'; text: string }>; isError?: boolean; summary?: Record<string, unknown> }>,
+) => async (args: A) => {
+  return tracked(db, { source: 'mcp' as const, tool, agent: 'mcp-agent' }, async () => {
+    const out = await fn(args)
+    const { summary, ...result } = out
+    return { result, summary }
+  })
+}
+
 const server = new McpServer(
   { name: 'living-ai-knowledge', version: '0.1.0' },
   {
@@ -113,13 +130,24 @@ server.registerTool('ask_knowledge', {
       .describe('Hide claims below this confidence. Default is low, so unverified leads still show up labelled.'),
     as_of: z.string().optional().describe('ISO timestamp: what was believed at that moment'),
   },
-}, async ({ question, min_trust, as_of }) => {
+}, trace('ask_knowledge', async ({ question, min_trust, as_of }: any) => {
   const result = await ask(db, question, {
     minTrust: min_trust,
     at: as_of ? new Date(as_of) : undefined,
   })
-  return { content: [{ type: 'text', text: renderAsk(result) }] }
-})
+  return {
+    content: [{ type: 'text' as const, text: renderAsk(result) }],
+    summary: {
+      answered: Boolean(result.anchor || result.listing),
+      template: result.template,
+      anchor_kind: result.anchor?.kind ?? null,
+      paths: result.paths.length,
+      max_depth: result.paths.reduce((m, p) => Math.max(m, p.depth), 0),
+      listed: result.listing?.entities.length ?? 0,
+      question_words: question.split(/\s+/).length,
+    },
+  }
+}))
 
 server.registerTool('lookup_entity', {
   title: 'Look up one thing',
@@ -134,15 +162,21 @@ server.registerTool('lookup_entity', {
       .describe('data_provenance: where its data comes from. blast_radius: what depends on it. access: how to reach it. concept_map: what implements it.'),
     depth: z.number().int().min(1).max(6).optional(),
   },
-}, async ({ name, shape, depth }) => {
+}, trace('lookup_entity', async ({ name, shape, depth }: any) => {
   const anchors = await findAnchors(db, name, 5)
   const anchor = anchors[0]
   if (!anchor) {
-    return { content: [{ type: 'text', text: `Nothing known called "${name}".` }] }
+    return {
+      content: [{ type: 'text' as const, text: `Nothing known called "${name}".` }],
+      summary: { found: false },
+    }
   }
   const template: TemplateName = (shape ?? 'data_provenance') as TemplateName
   if (!(template in TEMPLATES)) {
-    return { content: [{ type: 'text', text: `Unknown shape. Options: ${Object.keys(TEMPLATES).join(', ')}` }] }
+    return {
+      content: [{ type: 'text' as const, text: `Unknown shape. Options: ${Object.keys(TEMPLATES).join(', ')}` }],
+      summary: { found: false, bad_shape: true },
+    }
   }
   const paths = await runTemplate(db, template, anchor.entity_id, { maxDepth: depth })
   const nodes = [...new Set([anchor.entity_id, ...paths.flatMap((p) => p.nodes)])]
@@ -159,8 +193,11 @@ server.registerTool('lookup_entity', {
     renderFacts(Object.fromEntries(facts), Object.fromEntries(names.rows.map((r) => [r.id, r.display_name]))),
   ].filter(Boolean).join('\n\n')
 
-  return { content: [{ type: 'text', text: `${header}${alternatives}\n\n${body}` }] }
-})
+  return {
+    content: [{ type: 'text' as const, text: `${header}${alternatives}\n\n${body}` }],
+    summary: { found: true, kind: anchor.kind, shape: template, paths: paths.length, ambiguous: anchors.length > 1 },
+  }
+}))
 
 // ── writing ────────────────────────────────────────────────────────────────
 
@@ -196,7 +233,7 @@ server.registerTool('record_observations', {
     confidence: z.number().min(0).max(1).optional().describe('Default confidence for the batch'),
     idempotency_key: z.string().optional(),
   },
-}, async (args) => {
+}, trace('record_observations', async (args: any) => {
   const result = await ingest(db, {
     session: args.session,
     agent: 'mcp-agent',
@@ -205,13 +242,31 @@ server.registerTool('record_observations', {
     env: args.env,
     method: 'llm_inferred',
     idempotency_key: args.idempotency_key,
-    observations: args.observations.map((o) => ({
+    observations: args.observations.map((o: any) => ({
       ...o,
       confidence: o.confidence ?? args.confidence,
     })) as any,
   })
-  return { content: [{ type: 'text', text: renderIngest(result) }] }
-})
+  const predicates: Record<string, number> = {}
+  for (const o of result.results) {
+    if (o.predicate) predicates[o.predicate] = (predicates[o.predicate] ?? 0) + 1
+  }
+  return {
+    content: [{ type: 'text' as const, text: renderIngest(result) }],
+    summary: {
+      accepted: result.accepted,
+      rejected: result.rejected,
+      replayed: Boolean(result.replayed),
+      predicates,
+      unmapped: result.results.filter((o) => o.predicate_unmapped).map((o) => o.predicate),
+      minted: result.results.filter((o) => o.subject?.minted || (o.object && 'minted' in o.object && o.object.minted)).length,
+      with_identifiers: args.observations.filter((o: any) => o.subject_identifiers?.length || o.object_identifiers?.length).length,
+      with_evidence: args.observations.filter((o: any) => o.evidence?.length).length,
+      with_span_text: args.observations.filter((o: any) => o.evidence?.some((e: any) => e.span_text)).length,
+      errors: result.results.filter((o) => !o.accepted).map((o) => (o.error ?? '').slice(0, 120)),
+    },
+  }
+}))
 
 server.registerTool('record_statement', {
   title: 'Record something the user said',
@@ -235,7 +290,7 @@ server.registerTool('record_statement', {
     env: z.string().optional(),
     dry_run: z.boolean().optional().describe('Parse and show what would be recorded, without recording'),
   },
-}, async ({ text, repo, env, dry_run }) => {
+}, trace('record_statement', async ({ text, repo, env, dry_run }: any) => {
   const r = await tell(db, { text, repo, env, agent: 'user (relayed)', dryRun: dry_run })
   const lines: string[] = []
   if (!r.claims.length) {
@@ -248,8 +303,65 @@ server.registerTool('record_statement', {
     }
   }
   for (const u of r.unparsed) lines.push(`  not understood, ignored: "${u}"`)
-  return { content: [{ type: 'text', text: lines.join('\n') }] }
-})
+  return {
+    content: [{ type: 'text' as const, text: lines.join('\n') }],
+    summary: {
+      claims: r.claims.length,
+      unparsed: r.unparsed.length,
+      refutations: r.claims.filter((c) => !c.polarity).length,
+      predicates: r.claims.map((c) => c.predicate),
+      chars: text.length,
+    },
+  }
+}))
+
+server.registerTool('load_context', {
+  title: 'Load the detailed context for one thing',
+  description: [
+    'Get the dense, current detail about a component, module or service - props,',
+    'variants, sub-components, usage, gotchas.',
+    '',
+    'The graph holds only what crosses a boundary: that a component exists, roughly',
+    'what it does, and where it lives. Detail that changes every sprint lives in a',
+    'context file NEXT TO THE CODE, so version control keeps it current. This tool',
+    'follows the pointer and loads it on demand.',
+    '',
+    'Call this when the user moves from "does something like this exist?" to "how do',
+    'I actually use it?" - especially about code in a project they are not currently',
+    'working in.',
+    '',
+    'Every outcome is useful, so call it rather than guessing:',
+    '  loaded           - here is the detail, plus how many commits behind it is',
+    '  no_context_file  - here is the source path; read it, or offer to write context',
+    '  repo_not_local   - here is the URL; the repo is not on this machine',
+    '  path_missing     - the recorded location is stale; the thing moved',
+    '',
+    'If the context is several commits behind the code it describes, say so rather',
+    'than presenting it as current.',
+  ].join('\n'),
+  inputSchema: {
+    name: z.string().describe('The component, module or service to load context for'),
+    max_chars: z.number().int().min(500).max(40000).optional()
+      .describe('Truncate the body at this length. Default 8000.'),
+  },
+}, trace('load_context', async ({ name, max_chars }: any) => {
+  const r = await loadContext(db, name, { maxChars: max_chars })
+  const parts: string[] = [r.message]
+  if (r.sourcePath) parts.push(`Source: ${r.sourcePath}${r.browseUrl ? `  (${r.browseUrl})` : ''}`)
+  if (r.content) parts.push('---', r.content)
+  return {
+    content: [{ type: 'text' as const, text: parts.join('\n\n') }],
+    isError: false,
+    summary: {
+      status: r.status,
+      kind: r.entity?.kind ?? null,
+      commits_behind: r.freshness?.commitsBehind ?? null,
+      freshness_checked: r.freshness?.checked ?? false,
+      truncated: Boolean(r.truncated),
+      body_chars: r.content?.length ?? 0,
+    },
+  }
+}))
 
 // ── the learning loop ──────────────────────────────────────────────────────
 
@@ -269,13 +381,16 @@ server.registerTool('pending_questions', {
     budget: z.number().int().min(1).max(10).optional().describe('How many to return. Default 2.'),
     near: z.string().optional().describe('Prefer questions about this repo or project, if you are working in one'),
   },
-}, async ({ budget, near }) => {
+}, trace('pending_questions', async ({ budget, near }: any) => {
   await maintain(db)
   const gaps = await askableQuestions(db, { budget: budget ?? 2, near })
   const total = (await knowledgeGaps(db)).length
   const text = renderGaps(gaps) + (total > gaps.length ? `\n(${total - gaps.length} lower-value gaps held back.)` : '')
-  return { content: [{ type: 'text', text }] }
-})
+  return {
+    content: [{ type: 'text' as const, text }],
+    summary: { returned: gaps.length, total_open: total, kinds: gaps.map((g) => g.gap_kind) },
+  }
+}))
 
 server.registerTool('answer_question', {
   title: 'Record an answer',
@@ -292,21 +407,26 @@ server.registerTool('answer_question', {
     entity_id: z.string().describe('From pending_questions'),
     answer: z.string().describe("The user's answer, in their words"),
   },
-}, async ({ gap_kind, entity_id, answer }) => {
+}, trace('answer_question', async ({ gap_kind, entity_id, answer }: any) => {
   await maintain(db)
   const gap = (await knowledgeGaps(db)).find((g) => g.gap_kind === gap_kind && g.entity_id === entity_id)
   if (!gap) {
     return {
-      content: [{ type: 'text', text: 'That question is no longer open — it may have been answered already. Call pending_questions for the current list.' }],
+      content: [{ type: 'text' as const, text: 'That question is no longer open — it may have been answered already. Call pending_questions for the current list.' }],
       isError: true,
+      summary: { gap_kind, stale: true },
     }
   }
   const result = await answerGap(db, gap, answer)
   const text = result.understood
     ? `Recorded: ${result.action}${result.detail ? `\n${JSON.stringify(result.detail, null, 2)}` : ''}`
     : `Not understood: ${result.action}. Ask the user to clarify, or use record_observations directly.`
-  return { content: [{ type: 'text', text }], isError: !result.understood }
-})
+  return {
+    content: [{ type: 'text' as const, text }],
+    isError: !result.understood,
+    summary: { gap_kind, understood: result.understood, action: result.action, answer_chars: answer.length },
+  }
+}))
 
   return server
 }

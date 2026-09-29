@@ -12,6 +12,8 @@
     "tell": "tsx src/cli/tell.ts",
     "answer": "tsx src/cli/answer.ts",
     "mcp": "node src/mcp/stdio.ts",
+    "report": "tsx src/cli/report.ts",
+    "context": "tsx src/cli/context.ts",
     "reset": "rm -rf .data && tsx src/cli/migrate.ts",
     "typecheck": "tsc --noEmit",
     "test": "node --test --experimental-strip-types test/*.test.ts"

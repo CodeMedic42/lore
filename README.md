@@ -202,6 +202,67 @@ link. It never asserts it — a path collision between two unrelated systems is
 entirely possible. This is the moment the graph becomes worth more than the sum of
 its parts, and it happens without anyone holding both repos in their head.
 
+## Two tiers: the graph, and context files
+
+Some knowledge is global and rare-changing. Some is local and changes every sprint.
+Putting both in one place is what breaks systems like this — either the central
+index rots, or a dense in-repo file becomes a merge battleground.
+
+So they are split along the line that matters:
+
+| | **The graph** | **A context file** |
+|---|---|---|
+| Holds | Facts that cross a boundary | Everything inside one boundary |
+| Example | `library-a exports TextField`, `SearchField composes TextField` | TextField's props, variants, gotchas |
+| Churn | Rare | Every sprint |
+| Lives | Central store | `src/components/TextField.context.md`, beside the code |
+| Merge conflicts | None — in no repository | The same ones you already had on the component |
+
+The graph stores a **pointer**. Detail is loaded on demand.
+
+That last row is the point. A dense index committed to a repo fights every branch,
+because it is a global thing stored locally. A per-component context file is edited
+by the same person editing the component, in the same commit — so it merges exactly
+as well as the code does.
+
+```markdown
+---
+describes: ./TextField.tsx
+generated_from: 4a91c2e
+---
+
+# TextField
+`onChange` hands you the string, not the `ChangeEvent`.
+```
+
+`generated_from` makes staleness a `git log 4a91c2e..HEAD -- TextField.tsx` away —
+instant, local, exact, no hashing:
+
+```
+$ npm run context -- TextField
+status: loaded
+Context for TextField, from src/components/TextField.context.md.
+WARNING: 2 commit(s) have touched the described files since this was written.
+Changed since: src/components/TextField.tsx.
+Treat details as possibly out of date, and offer to refresh it.
+```
+
+Every failure mode still answers something useful:
+
+| Status | Meaning |
+|---|---|
+| `loaded` | Here is the detail, and how far behind it is |
+| `no_context_file` | Here is the source path, and where to write one |
+| `repo_not_local` | Not checked out here — here is the URL |
+| `path_missing` | The recorded location is stale; it moved |
+| `no_source` | Nothing records where this lives, and here is what would fix that |
+
+Register a checkout so files can be read:
+
+```bash
+npm run context -- register library-a ~/src/library-a https://gitlab.com/acme/library-a
+```
+
 ## Using it from Claude Code (MCP)
 
 `.mcp.json` in this repo registers the server, so Claude Code offers to connect it
@@ -221,6 +282,7 @@ Six tools:
 | Tool | For |
 |---|---|
 | `ask_knowledge` | A question in plain English, answered across repo boundaries with evidence |
+| `load_context` | Follow the pointer and load the dense detail beside the code |
 | `lookup_entity` | Everything known about one thing, and what it connects to |
 | `record_observations` | Record durable facts the agent learned |
 | `record_statement` | Record what the user said, in their words |
