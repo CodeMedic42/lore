@@ -18,23 +18,58 @@ The test has a control and a treatment:
 
 ---
 
-## Prerequisites
+## What has to be running
 
-```bash
-docker start lak-pg                      # or the pgvector run command in the README
-cd ~/source/local/ai/living-ai-knowledge
-npm test                                 # should be green before trusting anything
+Worth being precise, because "start the MCP server" is a reasonable thing to
+assume and is not what happens.
+
+**There is no MCP server to start.** The client launches one per session as a
+subprocess, speaking JSON-RPC over stdin/stdout, and it exits when the session
+does. Two Claude windows means two of them, which is fine.
+
+**The database does have to be running.** That is the only long-lived process.
+Everything the graph knows lives in PostgreSQL; each MCP subprocess connects to
+it on startup.
+
+```
+  Claude Code ──spawns──▶ node src/mcp/stdio.ts ──▶ PostgreSQL  ← the only service
+  (session 1)             (lives and dies with the session)      ↑
+  Claude Code ──spawns──▶ node src/mcp/stdio.ts ─────────────────┘
+  (session 2)
 ```
 
-**Register the MCP server for all projects** (once — it is not registered by
-default, and without it the session in Reform has no tools at all):
+```bash
+docker start lak-pg                      # the service
+cd ~/source/local/ai/living-ai-knowledge
+npm test                                 # green before trusting anything
+```
+
+**Register the MCP server for all projects** (once — not registered by default,
+and without it the session in Reform has no tools at all):
 
 ```bash
 claude mcp add knowledge --scope user -- \
   node /Users/codemedic42/source/local/ai/living-ai-knowledge/src/mcp/stdio.ts
-
-claude mcp list          # expect: knowledge - ✔ Connected
 ```
+
+### Preflight
+
+```bash
+npm run doctor
+```
+
+Checks every dependency in the order it would break, and exits non-zero if the
+test would fail for an uninteresting reason. Expect all `ok` before starting:
+
+```
+  ok    database reachable (pg) — PostgreSQL 17.11
+  ok    migrations applied (19/19)
+  ok    pgvector present
+  ok    graph populated — 131 entities, 109 components, 249 live edges
+  ok    MCP registered — knowledge - ✔ Connected
+```
+
+A `warn` about embeddings or tool calls is fine at this stage; a `FAIL` is not.
 
 > Deliberately **no `CLAUDE.md` is added to Reform.** A line there saying "use the
 > knowledge tools" would almost certainly make phase B pass, and would tell us
