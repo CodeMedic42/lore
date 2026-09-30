@@ -1,7 +1,7 @@
 import { readdir } from 'node:fs/promises'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
-import { databaseUrl, open } from '../db/index.ts'
+import { databaseUrl, describeDatabase, open, resolveDatabase, redact } from '../db/index.ts'
 
 /**
  * Preflight. Everything a live session depends on, checked in the order it would
@@ -15,7 +15,10 @@ const bad = (s: string) => `  FAIL  ${s}`
 const out: string[] = []
 let fatal = false
 
+const choice = resolveDatabase()
 console.log('\nliving-ai-knowledge preflight\n')
+console.log(`  graph:  ${describeDatabase(choice)}`)
+console.log(`          ${redact(choice.url)}\n`)
 
 let db
 try {

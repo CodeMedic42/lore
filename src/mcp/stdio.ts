@@ -11,7 +11,7 @@
  * the message below works hard to say what to actually do about it.
  */
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
-import { databaseUrl, open } from '../db/index.ts'
+import { databaseUrl, describeDatabase, open, redact, resolveDatabase } from '../db/index.ts'
 import { migrate } from '../db/migrate.ts'
 import { createMcpServer } from './server.ts'
 
@@ -84,4 +84,4 @@ process.on('SIGINT', shutdown)
 process.on('SIGTERM', shutdown)
 
 await server.connect(new StdioServerTransport())
-console.error(`living-ai-knowledge ready (driver: ${db.driver}, ${databaseUrl().replace(/:[^:@]*@/, ':***@')})`)
+console.error(`living-ai-knowledge ready — graph: ${describeDatabase(resolveDatabase())} [${redact(databaseUrl())}]`)

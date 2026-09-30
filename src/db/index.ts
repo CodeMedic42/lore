@@ -22,10 +22,11 @@ export interface Db {
   close(): Promise<void>
 }
 
-const DEFAULT_URL = 'postgres://lak:lak@localhost:55432/lak'
+export { describeDatabase, redact, resolveDatabase } from './config.ts'
+import { resolveDatabase } from './config.ts'
 
 export function databaseUrl(): string {
-  return process.env.DATABASE_URL ?? DEFAULT_URL
+  return resolveDatabase().url
 }
 
 /**

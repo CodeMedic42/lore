@@ -15,6 +15,16 @@ graph, or never read from it, no matter how good the schema is. Everything in
 `test/` verifies the machinery works. Nothing there verifies that a model reaches
 for it — and a model that ignores the tools makes all of it worthless.
 
+## The throwaway graph
+
+Nothing here touches a real graph. The testing workspace at
+`~/source/local/ai/ai-knowledge-testing/` carries a `.lak.json`, and the MCP server
+walks up from the session's working directory to find it — so every session inside
+that tree reads and writes `lak_test`, and sessions anywhere else use the personal
+database. Clear it with `LAK_PROFILE=test npm run clear`.
+
+Every command prints which graph it is touching before acting on it.
+
 ## Layout
 
 | Path | What it is |
@@ -23,6 +33,7 @@ for it — and a model that ignores the tools makes all of it worthless.
 | `lib/snapshot.ts` | Records graph counts and tool history per phase |
 | `lib/fixture.ts` | Materialises the consuming-repo fixture outside this repo |
 | `fixtures/` | Committed templates, copied out by `lib/fixture.ts` before use |
+| `fixtures/client-test` | A UI client consuming a component library it does not own |
 | `results/` | Per-run evidence — gitignored |
 
 A fixture is committed as a template and copied elsewhere before use, because a

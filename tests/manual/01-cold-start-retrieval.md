@@ -18,6 +18,34 @@ The test has a control and a treatment:
 
 ---
 
+## The throwaway graph
+
+Manual tests must never touch a real graph — scanning fixtures into it would
+pollute it permanently and there would be no safe way to clear it.
+
+The testing workspace carries a `.lak.json`, and the MCP server walks up from the
+session's working directory to find it. So every session inside
+`~/source/local/ai/ai-knowledge-testing/` reads and writes `lak_test`, while
+sessions anywhere else use the personal graph. No second MCP registration, no
+scope conflicts.
+
+Every tool says which graph it is touching:
+
+```
+$ LAK_PROFILE=test npm run clear
+clearing: lak_test (via LAK_PROFILE)
+```
+
+Set up the workspace and this test's fixture:
+
+```bash
+npx tsx tests/manual/lib/fixture.ts client-test      # --force to replace
+LAK_PROFILE=test npx tsx src/cli/migrate.ts          # first time only
+```
+
+> Phase A still scans the REAL Reform repository — that is the point. Only the
+> graph it writes into is disposable.
+
 ## What has to be running
 
 Worth being precise, because "start the MCP server" is a reasonable thing to
@@ -106,7 +134,7 @@ Run `doctor` before clearing, not after.
 ## Phase A — populate by asking
 
 ```bash
-npm run clear                            # the graph now knows nothing
+LAK_PROFILE=test npm run clear           # the throwaway graph now knows nothing
 npx tsx tests/manual/lib/snapshot.ts 01-a-before   # records the empty starting point
 
 cd ~/source/github.com/codemedic42/reform
@@ -126,8 +154,8 @@ Then, in the other terminal:
 
 ```bash
 cd ~/source/local/ai/living-ai-knowledge
-npm run activity
-npx tsx tests/manual/lib/snapshot.ts 01-a-after
+LAK_PROFILE=test npm run activity
+LAK_PROFILE=test npx tsx tests/manual/lib/snapshot.ts 01-a-after
 ```
 
 **PASS** — `scan_repository` appears in the activity log, and the graph holds
@@ -153,14 +181,13 @@ would learn nothing. From a consuming repo, Reform's source is not on disk — g
 That is also the real scenario: working on a client, asked to use a library you do
 not own.
 
-The fixture is a small React app whose `package.json` depends on
+`client-test` is a small React app whose `package.json` depends on
 `@reformjs/reactive`, with a form already using `TextField`, `SelectField` and
 `Card`, and a TODO implying a need without naming a component. It has no
 `node_modules`, so nothing about Reform is locally greppable.
 
 ```bash
-npx tsx tests/manual/lib/fixture.ts          # materialise it (--force to replace)
-cd ~/source/local/ai/contact-form-demo
+cd ~/source/local/ai/ai-knowledge-testing/client-test
 claude
 ```
 
@@ -178,8 +205,8 @@ Ask:
 Then:
 
 ```bash
-npm run activity
-npx tsx tests/manual/lib/snapshot.ts 01-b-after
+LAK_PROFILE=test npm run activity
+LAK_PROFILE=test npx tsx tests/manual/lib/snapshot.ts 01-b-after
 ```
 
 **PASS** — the log shows at least one of `find_similar`, `ask_knowledge` or
@@ -210,7 +237,7 @@ claude
 > Write context files for DatePicker, DateSelectField and DateRangeSelectInput.
 
 ```bash
-npm run activity          # expect draft_context and write_context calls
+LAK_PROFILE=test npm run activity    # expect draft_context and write_context calls
 cd ~/source/github.com/codemedic42/reform && git status --short
 ```
 
@@ -222,8 +249,8 @@ Then re-index so the new prose is searchable:
 
 ```bash
 cd ~/source/local/ai/living-ai-knowledge
-npm run embed -- index
-npx tsx tests/manual/lib/snapshot.ts 01-c-after
+LAK_PROFILE=test npm run embed -- index
+LAK_PROFILE=test npx tsx tests/manual/lib/snapshot.ts 01-c-after
 ```
 
 > These files land in the Reform working tree. `git checkout` them afterwards if
@@ -242,8 +269,8 @@ claude
 ```
 
 ```bash
-npm run activity
-npx tsx tests/manual/lib/snapshot.ts 01-d-after
+LAK_PROFILE=test npm run activity
+LAK_PROFILE=test npx tsx tests/manual/lib/snapshot.ts 01-d-after
 ```
 
 **PASS** — the log shows `find_similar` (or `ask_knowledge`) *followed by*

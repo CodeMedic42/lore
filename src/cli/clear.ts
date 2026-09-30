@@ -1,5 +1,9 @@
-import { open } from '../db/index.ts'
+import { describeDatabase, open, resolveDatabase } from '../db/index.ts'
 import { migrate } from '../db/migrate.ts'
+
+// Say which graph is about to be emptied. Clearing the wrong one is not recoverable.
+const choice = resolveDatabase()
+console.log(`clearing: ${describeDatabase(choice)}`)
 
 const db = await open()
 await migrate(db, { quiet: true })
