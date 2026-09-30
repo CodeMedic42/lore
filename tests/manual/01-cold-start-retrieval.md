@@ -153,15 +153,21 @@ would learn nothing. From a consuming repo, Reform's source is not on disk — g
 That is also the real scenario: working on a client, asked to use a library you do
 not own.
 
-A fixture exists at `~/source/local/ai/contact-form-demo` — a small React app whose
-`package.json` depends on `@reformjs/reactive`, with a form that already uses
-`TextField`, `SelectField` and `Card`, and a TODO implying a need without naming a
-component. No `node_modules`, so nothing about Reform is locally greppable.
+The fixture is a small React app whose `package.json` depends on
+`@reformjs/reactive`, with a form already using `TextField`, `SelectField` and
+`Card`, and a TODO implying a need without naming a component. It has no
+`node_modules`, so nothing about Reform is locally greppable.
 
 ```bash
+npx tsx tests/manual/lib/fixture.ts          # materialise it (--force to replace)
 cd ~/source/local/ai/contact-form-demo
 claude
 ```
+
+The template lives in `fixtures/` but cannot be used from there: a session started
+inside this repository resolves its project to this repository, and would see the
+knowledge tool's own source as context. The script copies it out and gives it its
+own git identity, so the session knows only that it consumes Reform.
 
 Ask:
 
