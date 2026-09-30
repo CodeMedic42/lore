@@ -98,7 +98,7 @@ export async function loadContext(
       firstMissing ??= {
         status: 'path_missing',
         entity: ent,
-        sourcePath: ref.path,
+        sourcePath: sourceAbs,
         localPath: loc.localPath,
         browseUrl: link ?? undefined,
         message:
@@ -135,16 +135,22 @@ export async function loadContext(
       }
     }
 
+    // Hand back the ABSOLUTE path. Returning a repo-relative one to a session
+    // working in a different repository invites the agent to guess where the
+    // repo lives - observed on the first cross-repo run, which went looking in a
+    // directory that has never existed.
+    const absolute = join(loc.localPath, ref.path)
     return {
       status: 'no_context_file',
       entity: ent,
-      sourcePath: ref.path,
+      sourcePath: absolute,
       localPath: loc.localPath,
       browseUrl: link ?? undefined,
       message:
-        `No context file has been written for ${ent.name} yet. The source is at ${ref.path}` +
+        `No context file has been written for ${ent.name} yet. Its source is at ${absolute}` +
         (link ? ` (${link})` : '') +
-        `. Read it directly, or write ${contextCandidates(ref.path)[0]} so the next person does not have to.`,
+        `. Read THAT exact path — do not guess a location. Or write a context file at ` +
+        `${join(loc.localPath, contextCandidates(ref.path)[0]!)} so the next person does not have to.`,
     }
   }
 
