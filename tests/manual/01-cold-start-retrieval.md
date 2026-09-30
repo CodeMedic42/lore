@@ -69,7 +69,11 @@ test would fail for an uninteresting reason. Expect all `ok` before starting:
   ok    MCP registered — knowledge - ✔ Connected
 ```
 
-A `warn` about embeddings or tool calls is fine at this stage; a `FAIL` is not.
+A `FAIL` means stop and fix. A `warn` is fine — and note that **after** phase A's
+`npm run clear` the graph and embedding lines *will* warn, because the graph is
+deliberately empty at that point. That is the test working, not a problem.
+
+Run `doctor` before clearing, not after.
 
 > Deliberately **no `CLAUDE.md` is added to Reform.** A line there saying "use the
 > knowledge tools" would almost certainly make phase B pass, and would tell us
@@ -82,16 +86,20 @@ A `warn` about embeddings or tool calls is fine at this stage; a `FAIL` is not.
 
 ```bash
 npm run clear                            # the graph now knows nothing
-npx tsx tests/manual/lib/snapshot.ts 01-a-before
+npx tsx tests/manual/lib/snapshot.ts 01-a-before   # records the empty starting point
 
 cd ~/source/github.com/codemedic42/reform
 claude
 ```
 
-Ask, in the session:
+Ask, in the session — **and phrase it as you naturally would.** Do not name the
+tools; whether the descriptions alone are enough is the whole point:
 
 > Review this repository and record what you learn, so future sessions do not have
 > to work it out again.
+
+While it runs, watch which tools it calls. Claude Code shows them live; the
+activity log is the durable record.
 
 Then, in the other terminal:
 
