@@ -26,6 +26,7 @@ import { loadContext } from '../context/load.ts'
 import { draftMaterial, writeContext } from '../context/write.ts'
 import { indexEmbeddings, localEmbedder, type Embedder } from '../embed/index.ts'
 import { findSimilar } from '../embed/search.ts'
+import { extractMonorepo } from '../extract/monorepo.ts'
 
 export function createMcpServer(db: Db, injectedEmbedder?: Embedder): McpServer {
 /**
@@ -379,6 +380,95 @@ server.registerTool('load_context', {
       freshness_checked: r.freshness?.checked ?? false,
       truncated: Boolean(r.truncated),
       body_chars: r.content?.length ?? 0,
+    },
+  }
+}))
+
+server.registerTool('scan_repository', {
+  title: 'Index a repository into the knowledge graph',
+  description: [
+    'Read a JavaScript/TypeScript repository and record what is in it: packages,',
+    'what they are built from, what they export, which package depends on which,',
+    'and which component composes which.',
+    '',
+    'Call this when asked to "review", "index" or "learn" a repo, or when',
+    'ask_knowledge comes back empty for a codebase that plainly exists. It reads',
+    'hundreds of files in about a second — far better than opening them yourself,',
+    'and the facts persist for every future session.',
+    '',
+    'It records TIER ONE only: structure and relationships. Props, variants and',
+    'gotchas belong in context files beside the code (see draft_context).',
+    '',
+    'Re-running is safe and cheap: it is a closed-world snapshot, so anything since',
+    'deleted from the code is closed rather than left behind.',
+    '',
+    'Set exclude for Storybook and example packages unless asked otherwise. They',
+    'import everything they demonstrate, so left in they become the answer to every',
+    '"what uses this" question instead of the real consumers.',
+    '',
+    'For a component LIBRARY, pass include_intra_package: composition inside the',
+    'package is the graph worth having. For a services monorepo, leave it off.',
+  ].join('\n'),
+  inputSchema: {
+    path: z.string().describe('Absolute path to the repository root'),
+    repo: z.string().optional().describe('Name to record it under. Defaults to the directory name.'),
+    browse_url: z.string().optional().describe('e.g. https://github.com/acme/repo, for linkable answers'),
+    exclude: z.array(z.string()).optional()
+      .describe("Skip packages whose name or path contains any of these, e.g. ['storybook','example']"),
+    include_intra_package: z.boolean().optional()
+      .describe('Record composition between components in the same package. Right for a component library.'),
+    dry_run: z.boolean().optional().describe('Report what would be recorded, write nothing'),
+    index_for_search: z.boolean().optional()
+      .describe('Also build embeddings so find_similar works. Default true; costs a few seconds.'),
+  },
+}, trace('scan_repository', async (args: any) => {
+  const r = await extractMonorepo(db, {
+    root: args.path,
+    repoKey: args.repo,
+    browseUrl: args.browse_url,
+    exclude: args.exclude,
+    includeIntraPackage: args.include_intra_package,
+    dryRun: args.dry_run,
+  })
+
+  const lines = [
+    `${args.dry_run ? 'Would index' : 'Indexed'} ${r.repoKey}:`,
+    `  packages: ${r.packages.length}   files: ${r.files}   components: ${r.components}`,
+    `  facts: ${r.observations}${args.dry_run ? '' : ` (${r.accepted} recorded, ${r.rejected} rejected)`}`,
+  ]
+  if (r.components) {
+    const pct = Math.round((r.documented / r.components) * 100)
+    lines.push(`  documented: ${r.documented} (${pct}%)`)
+    if (pct < 20) {
+      lines.push('  NOTE: few components carry doc comments, so find_similar will be matching')
+      lines.push('  largely on names. Writing context files (draft_context) is what fixes that.')
+    }
+  }
+  if (r.excluded.length) lines.push(`  excluded: ${r.excluded.join(', ')}`)
+  if (r.swept) lines.push(`  removed: ${r.swept} fact(s) no longer present in the code`)
+  if (r.preview.length) {
+    lines.push('', 'cross-package composition found:')
+    for (const p of r.preview.slice(0, 10)) lines.push(`  ${p}`)
+  }
+  for (const w of r.warnings.slice(0, 5)) lines.push(`  warning: ${w}`)
+
+  let indexed = 0
+  if (!args.dry_run && args.index_for_search !== false && r.accepted > 0) {
+    const e = embedder()
+    if (e) {
+      const idx = await indexEmbeddings(db, e)
+      indexed = idx.embedded
+      lines.push('', `Indexed ${idx.embedded} description(s) for similarity search.`)
+    }
+  }
+
+  return {
+    content: [{ type: 'text' as const, text: lines.join('\n') }],
+    summary: {
+      repo: r.repoKey, packages: r.packages.length, files: r.files,
+      components: r.components, documented: r.documented,
+      accepted: r.accepted, rejected: r.rejected, removed: r.swept,
+      excluded: r.excluded.length, embedded: indexed, dry_run: Boolean(args.dry_run),
     },
   }
 }))

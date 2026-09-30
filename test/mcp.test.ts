@@ -27,7 +27,7 @@ test('the server advertises the tools an agent needs', async () => {
   assert.deepEqual(names, [
     'answer_question', 'ask_knowledge', 'draft_context', 'find_similar', 'load_context',
     'lookup_entity', 'pending_questions', 'record_observations', 'record_statement',
-    'write_context',
+    'scan_repository', 'write_context',
   ])
   // The descriptions are how the model learns what is worth recording.
   const record = tools.find((t) => t.name === 'record_observations')!
