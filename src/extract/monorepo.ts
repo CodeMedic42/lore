@@ -1,4 +1,5 @@
 import { readdir, readFile, stat } from 'node:fs/promises'
+import { statSync } from 'node:fs'
 import { basename, dirname, join, relative } from 'node:path'
 import type { Db } from '../db/index.ts'
 import { ingest, type ObservationInput } from '../store/observations.ts'
@@ -162,6 +163,37 @@ export async function extractMonorepo(db: Db, opts: ExtractOptions): Promise<Ext
     object_literal: `Monorepo with ${packages.length} package(s), indexed by the monorepo extractor.`,
   })
 
+  // ── pass one: what does each file export? ───────────────────────────────
+  //
+  // A default import's local name is arbitrary - `import DateSelect from
+  // './date-select-field'` names a component the defining file calls
+  // DateSelectField. Taking the local alias as identity fragments one component
+  // into a phantom per importer, which is the exact over-fragmentation this
+  // system exists to avoid. So resolve default imports through what the TARGET
+  // file actually exports.
+  const fileExports = new Map<string, { default?: string; named: Set<string> }>()
+  const packageFiles = new Map<string, string[]>()
+  for (const pkg of packages) {
+    const sources = await walkSources(pkg.dir, packages, maxFiles, excludedDirs)
+    packageFiles.set(pkg.name, sources)
+    for (const file of sources) {
+      if (!SOURCE_EXT.test(file) || IGNORE_FILE.test(file)) continue
+      let text: string
+      try {
+        const st = await stat(file)
+        if (st.size > 400_000) continue
+        text = await readFile(file, 'utf8')
+      } catch {
+        continue
+      }
+      const ex = parseExports(text)
+      fileExports.set(file, {
+        default: ex.find((e) => e.kind === 'default')?.name,
+        named: new Set(ex.filter((e) => e.kind !== 'default').map((e) => e.name)),
+      })
+    }
+  }
+
   let fileCount = 0
   let componentCount = 0
   let documented = 0
@@ -203,7 +235,7 @@ export async function extractMonorepo(db: Db, opts: ExtractOptions): Promise<Ext
       }
     }
 
-    const sources = await walkSources(pkg.dir, packages, maxFiles - fileCount, excludedDirs)
+    const sources = packageFiles.get(pkg.name) ?? []
     const languages = new Set<string>()
 
     for (const file of sources) {
@@ -283,7 +315,15 @@ export async function extractMonorepo(db: Db, opts: ExtractOptions): Promise<Ext
         if (!looksLikeComponent(imp.imported === 'default' ? imp.local : imp.imported, 'x.tsx')) continue
         if (!primary) continue
 
-        const importedName = imp.imported === 'default' ? imp.local : imp.imported
+        // For a default import the exported name lives in the target file, not in
+        // whatever this importer chose to call it.
+        let importedName = imp.imported
+        if (imp.imported === 'default') {
+          const resolvedFile = resolveToFile(imp.specifier, file, target)
+          const real = resolvedFile ? fileExports.get(resolvedFile)?.default : undefined
+          if (!real) continue // cannot identify it honestly, so do not guess
+          importedName = real
+        }
         obs.push({
           subject: primary, subject_kind: 'component',
           subject_identifiers: id('module_export', `${pkg.name}#${primary}`),
@@ -372,6 +412,57 @@ function resolveSpecifier(
     if (hit) return hit
   }
   return null
+}
+
+/**
+ * Resolve an import specifier to the file it names, trying the extensions and
+ * index files a bundler would. Returns null when it cannot be resolved, and the
+ * caller then declines to record rather than guessing.
+ */
+function resolveToFile(specifier: string, fromFile: string, targetPkg: PackageInfo): string | null {
+  const SUFFIXES = ['', '.tsx', '.ts', '.jsx', '.js', '.mts', '.cts',
+    '/index.tsx', '/index.ts', '/index.jsx', '/index.js']
+  let base: string
+  if (specifier.startsWith('.')) {
+    base = join(dirname(fromFile), specifier)
+  } else {
+    // '@acme/lib/components/Foo' -> that package's dir + the remainder
+    const parts = specifier.split('/')
+    const nameLen = specifier.startsWith('@') ? 2 : 1
+    const rest = parts.slice(nameLen).join('/')
+    base = rest ? join(targetPkg.dir, rest) : join(targetPkg.dir, 'src', 'index')
+  }
+
+  const candidates: string[] = []
+  // TypeScript's ESM/NodeNext convention writes `from './icon/index.js'` while the
+  // file on disk is `index.tsx`. Appending extensions to that yields
+  // "index.js.tsx" and resolves nothing, which silently drops most of the import
+  // graph in any modern TypeScript codebase.
+  const jsExt = /\.(js|jsx|mjs|cjs)$/
+  if (jsExt.test(base)) {
+    const stem = base.replace(jsExt, '')
+    candidates.push(`${stem}.tsx`, `${stem}.ts`, `${stem}.mts`, `${stem}.cts`, `${stem}.jsx`)
+  }
+  candidates.push(...SUFFIXES.map((ext) => `${base}${ext}`))
+
+  for (const candidate of candidates) {
+    if (existsSyncCached(candidate)) return candidate
+  }
+  return null
+}
+
+const statCache = new Map<string, boolean>()
+function existsSyncCached(p: string): boolean {
+  const hit = statCache.get(p)
+  if (hit !== undefined) return hit
+  let ok = false
+  try {
+    ok = statSync(p).isFile()
+  } catch {
+    ok = false
+  }
+  statCache.set(p, ok)
+  return ok
 }
 
 async function findManifests(root: string): Promise<string[]> {

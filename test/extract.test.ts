@@ -287,6 +287,82 @@ test('doc coverage is reported, because similarity depends on it', async () => {
   await db.close()
 })
 
+test('a default import is identified by what the target file exports, not the local alias', async () => {
+  const db = await freshDb()
+  const dir = await mkdtemp(join(tmpdir(), 'lak-def-'))
+  const write = async (p: string, body: string) => {
+    await mkdir(join(dir, p, '..'), { recursive: true })
+    await writeFile(join(dir, p), body)
+  }
+  await write('package.json', JSON.stringify({ name: '@acme/lib', main: 'src/index.ts' }))
+  await write('src/date-select-field.tsx',
+    'const DateSelectField = () => <div />\nexport default DateSelectField;\n')
+  // Two importers, two different local names for the SAME component.
+  await write('src/single.tsx',
+    "import DateSelect from './date-select-field'\nexport const Single = () => <DateSelect />\n")
+  await write('src/range.tsx',
+    "import DatePick from './date-select-field'\nexport const Range = () => <DatePick />\n")
+
+  await extractMonorepo(db, { root: dir, repoKey: 'ui', includeIntraPackage: true })
+
+  const phantoms = await db.query<{ display_name: string }>(
+    `select display_name from entity where display_name in ('DateSelect','DatePick')`)
+  assert.deepEqual(phantoms.rows, [],
+    'a local alias must not mint a component; that fragments one thing into one phantom per importer')
+
+  const targets = await db.query<{ o: string; n: string }>(
+    `select o.display_name o, count(*)::text n from edges_canon(now()) ec
+       join entity o on o.id = ec.object
+      where ec.predicate = 'composes' group by 1`)
+  assert.deepEqual(targets.rows, [{ o: 'DateSelectField', n: '2' }],
+    'both importers resolve to the one real component')
+  await rm(dir, { recursive: true, force: true })
+  await db.close()
+})
+
+test("TypeScript's .js-on-disk-is-.tsx convention resolves", async () => {
+  const db = await freshDb()
+  const dir = await mkdtemp(join(tmpdir(), 'lak-jsext-'))
+  const write = async (p: string, body: string) => {
+    await mkdir(join(dir, p, '..'), { recursive: true })
+    await writeFile(join(dir, p), body)
+  }
+  await write('package.json', JSON.stringify({ name: '@acme/lib', main: 'src/index.ts' }))
+  await write('src/icon/index.tsx', 'const Icon = () => <i />\nexport default Icon;\n')
+  // NodeNext writes the extension as .js even though the file is .tsx. Appending
+  // extensions to that gives "index.js.tsx" and silently drops the import graph.
+  await write('src/icon-button.tsx',
+    "import Icon from './icon/index.js'\nexport const IconButton = () => <Icon />\n")
+
+  await extractMonorepo(db, { root: dir, repoKey: 'ui', includeIntraPackage: true })
+  const edges = await db.query<{ s: string; o: string }>(
+    `select s.display_name s, o.display_name o from edges_canon(now()) ec
+       join entity s on s.id = ec.subject join entity o on o.id = ec.object
+      where ec.predicate = 'composes'`)
+  assert.deepEqual(edges.rows, [{ s: 'IconButton', o: 'Icon' }])
+  await rm(dir, { recursive: true, force: true })
+  await db.close()
+})
+
+test('an unresolvable default import is skipped rather than guessed at', async () => {
+  const db = await freshDb()
+  const dir = await mkdtemp(join(tmpdir(), 'lak-unres-'))
+  const write = async (p: string, body: string) => {
+    await mkdir(join(dir, p, '..'), { recursive: true })
+    await writeFile(join(dir, p), body)
+  }
+  await write('package.json', JSON.stringify({ name: '@acme/lib', main: 'src/index.ts' }))
+  await write('src/Thing.tsx',
+    "import Mystery from './does-not-exist'\nexport const Thing = () => <Mystery />\n")
+
+  await extractMonorepo(db, { root: dir, repoKey: 'ui', includeIntraPackage: true })
+  const n = await db.query<{ n: string }>(
+    `select count(*)::text n from entity where display_name = 'Mystery'`)
+  assert.equal(Number(n.rows[0]!.n), 0, 'better a missing edge than an invented component')
+  await rm(dir, { recursive: true, force: true })
+  await db.close()
+})
+
 test('a dry run reports what it would do and writes nothing', async () => {
   const db = await freshDb()
   const dir = await monorepo()
