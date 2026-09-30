@@ -426,12 +426,19 @@ npm run context -- register library-a ~/src/library-a https://gitlab.com/acme/li
 
 ## Using it from Claude Code (MCP)
 
-`.mcp.json` in this repo registers the server, so Claude Code offers to connect it
-when you open the project. Or add it yourself:
+Register it once, for every project — the point is asking about repos you are
+*not* currently in, so a project-scoped registration would defeat it:
 
 ```bash
-claude mcp add knowledge -- node /absolute/path/to/src/mcp/stdio.ts
+claude mcp add knowledge --scope user -- \
+  node /absolute/path/to/living-ai-knowledge/src/mcp/stdio.ts
+
+npm run doctor      # verifies the registration, the database, and everything else
 ```
+
+There is deliberately no `.mcp.json` in this repo: a project-scoped entry needs a
+relative path, which only resolves when the cwd happens to be this directory, and
+having both scopes registered makes Claude Code warn about conflicting endpoints.
 
 It runs on plain `node` — Node 24 strips the types, so there is no build step and
 no `tsx` in the hot path. It talks to the same core the HTTP API wraps, so there is
