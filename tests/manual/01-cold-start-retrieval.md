@@ -52,6 +52,27 @@ claude mcp add knowledge --scope user -- \
   node /Users/codemedic42/source/local/ai/living-ai-knowledge/src/mcp/stdio.ts
 ```
 
+### Permission prompts
+
+Claude Code asks before each MCP tool, per project. With eleven tools that is a lot
+of interruptions, and the prompts are not the evidence anyway — `npm run activity`
+is. Allow the whole server up front:
+
+```bash
+# in the TARGET repo, not this one
+jq '.permissions.allow += ["mcp__knowledge"]' .claude/settings.local.json > /tmp/s \
+  && mv /tmp/s .claude/settings.local.json
+```
+
+`mcp__knowledge` covers every tool the server exposes. `.claude/settings.local.json`
+is conventionally gitignored, so this does not touch the repository.
+
+If prompts continue in a session that was already open, restart it — settings are
+read at startup.
+
+> This is a convenience, not a thumb on the scale. It changes whether you are
+> *asked*, never whether Claude *chooses* the tool, which is the thing under test.
+
 ### Preflight
 
 ```bash
