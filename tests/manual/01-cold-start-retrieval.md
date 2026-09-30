@@ -144,11 +144,30 @@ recording anything.
 
 ## Phase B — the control
 
-Start a **new** session (`/exit`, then `claude` again) so nothing is carried over
-in context. Ask:
+**Ask from a DIFFERENT repository.** Asking about Reform from inside Reform is the
+weakest form of this test: reading `projects/reactive/src/components/fields/` is
+fast, accurate and current, so an agent might quite reasonably prefer grep and we
+would learn nothing. From a consuming repo, Reform's source is not on disk — grep
+*cannot* answer, and the graph is the only route.
 
-> I need to add a date range picker to a form in this codebase. Is there anything
-> that already exists I should reuse, and what do I need to know to use it?
+That is also the real scenario: working on a client, asked to use a library you do
+not own.
+
+A fixture exists at `~/source/local/ai/contact-form-demo` — a small React app whose
+`package.json` depends on `@reformjs/reactive`, with a form that already uses
+`TextField`, `SelectField` and `Card`, and a TODO implying a need without naming a
+component. No `node_modules`, so nothing about Reform is locally greppable.
+
+```bash
+cd ~/source/local/ai/contact-form-demo
+claude
+```
+
+Ask:
+
+> Customers need to tell us when they are free for a callback, so this form needs a
+> date range. Is there anything in the libraries we already use that I should reuse,
+> and what do I need to know to use it?
 
 Then:
 
@@ -158,8 +177,9 @@ npx tsx tests/manual/lib/snapshot.ts 01-b-after
 ```
 
 **PASS** — the log shows at least one of `find_similar`, `ask_knowledge` or
-`lookup_entity`, and the answer names real components (`DateSelectField`,
-`DatePicker`, `DateRangeSelectInput`).
+`lookup_entity`, and the answer names a real Reform component
+(`DateRangeSelectInput`, `DateSelectField`, `DateSingleSelectField`) that appears
+nowhere in this repository.
 
 **FAIL** — no tool calls. This is the outcome worth knowing about, and the one
 seen in practice before now. If it fails, record **how the answer was reached**
@@ -173,7 +193,13 @@ Nothing has documented those components yet. That is what phase D changes.
 
 ## Phase C — write the context files
 
-Same or new session, in Reform:
+**Back in Reform**, since that is where the files belong — they are committed beside
+the code they describe.
+
+```bash
+cd ~/source/github.com/codemedic42/reform
+claude
+```
 
 > Write context files for DatePicker, DateSelectField and DateRangeSelectInput.
 
@@ -201,7 +227,13 @@ npx tsx tests/manual/lib/snapshot.ts 01-c-after
 
 ## Phase D — the treatment
 
-New session again. Ask **the identical phase B question**.
+New session, **back in the consuming repo**, asking **the identical phase B
+question**.
+
+```bash
+cd ~/source/local/ai/contact-form-demo
+claude
+```
 
 ```bash
 npm run activity
