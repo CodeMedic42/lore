@@ -268,3 +268,71 @@ test('idempotency key replays instead of double-writing', async () => {
   assert.equal(Number(n.rows[0]!.n), 1)
   await db.close()
 })
+
+// ── regressions from the first real agent run ──────────────────────────────
+
+test('an observation about a scanned package does not create a twin', async () => {
+  const db = await freshDb()
+  // What the extractor writes.
+  await ingest(db, { method: 'code_derived', env: 'prod', repo: 'reform', observations: [
+    { subject: '@reformjs/reactive', subject_kind: 'package', predicate: 'built_with',
+      object: 'Rollup', object_kind: 'technology' }] })
+  // What an agent writes moments later, without passing env.
+  await ingest(db, { method: 'llm_inferred', repo: 'reform', observations: [
+    { subject: '@reformjs/reactive', subject_kind: 'package', predicate: 'note',
+      object_literal: 'the exports map drives the rollup input list' }] })
+
+  const n = await db.query<{ n: string }>(
+    `select count(*)::text n from entity where display_name = '@reformjs/reactive' and canonical_id = id`)
+  assert.equal(Number(n.rows[0]!.n), 1,
+    'env is a property of a deployed thing; a package has no prod and staging version')
+  await db.close()
+})
+
+test('a differing kind guess resolves onto the existing entity rather than minting', async () => {
+  const db = await freshDb()
+  await ingest(db, { method: 'code_derived', observations: [
+    { subject: 'reform', subject_kind: 'package', predicate: 'built_with',
+      object: 'pnpm', object_kind: 'technology' }] })
+  const r = await ingest(db, { method: 'llm_inferred', observations: [
+    { subject: 'reform', subject_kind: 'repo', predicate: 'note', object_literal: 'no CI exists' }] })
+
+  const n = await db.query<{ n: string }>(
+    `select count(*)::text n from entity where display_name = 'reform' and canonical_id = id`)
+  assert.equal(Number(n.rows[0]!.n), 1, 'kind is a guess, not a partition')
+  assert.match((r.results[0]!.warnings ?? []).join(' '), /resolved .* onto an existing package/,
+    'but the caller is told, in case they really are different things')
+  await db.close()
+})
+
+test('an unknown environment still refuses to choose between prod and staging', async () => {
+  const db = await freshDb()
+  await ingest(db, { method: 'human', env: 'prod', observations: [
+    { subject: 'notifications-db', subject_kind: 'datastore', predicate: 'deployed_to',
+      object: 'aws-prod', object_kind: 'cloud_resource' }] })
+  await ingest(db, { method: 'human', env: 'staging', observations: [
+    { subject: 'notifications-db', subject_kind: 'datastore', predicate: 'deployed_to',
+      object: 'aws-staging', object_kind: 'cloud_resource' }] })
+  // No env given, and two real environments exist — guessing would be worse than a third.
+  await ingest(db, { method: 'llm_inferred', observations: [
+    { subject: 'notifications-db', subject_kind: 'datastore', predicate: 'note',
+      object_literal: 'holds the notification rows' }] })
+
+  const envs = await db.query<{ env: string }>(
+    `select env from entity where display_name = 'notifications-db' and canonical_id = id order by env`)
+  assert.deepEqual(envs.rows.map((r) => r.env), ['prod', 'staging', 'unknown'],
+    'prod and staging must never be bridged by an answer that named neither')
+  await db.close()
+})
+
+test('a datastore still partitions by environment', async () => {
+  const db = await freshDb()
+  await ingest(db, { method: 'human', env: 'prod', observations: [
+    { subject: 'cache', subject_kind: 'cache', predicate: 'note', object_literal: 'prod' }] })
+  await ingest(db, { method: 'human', env: 'staging', observations: [
+    { subject: 'cache', subject_kind: 'cache', predicate: 'note', object_literal: 'staging' }] })
+  const n = await db.query<{ n: string }>(
+    `select count(*)::text n from entity where display_name = 'cache' and canonical_id = id`)
+  assert.equal(Number(n.rows[0]!.n), 2, 'the prod/staging distinction that started all this still holds')
+  await db.close()
+})

@@ -30,6 +30,24 @@ export interface Resolution {
  */
 export const CANDIDATE_THRESHOLD = 0.7
 
+/**
+ * Kinds that describe source code rather than a running thing.
+ *
+ * A package has no prod and staging version; it is one package. A database does.
+ * Partitioning code artefacts by environment is how the first real agent run
+ * produced a twin of every scanned package: the extractor wrote env='prod', an
+ * observation without an explicit env wrote 'unknown', and the two never met.
+ */
+const ENVIRONMENTLESS = new Set([
+  'package', 'repo', 'component', 'technology', 'capability',
+  'data_concept', 'team', 'domain', 'iac_module', 'pipeline', 'endpoint',
+])
+
+export function normaliseEnv(kind: string | undefined, env: string | undefined): string {
+  const e = (env ?? 'unknown').toLowerCase()
+  return kind && ENVIRONMENTLESS.has(kind) ? 'unknown' : e
+}
+
 export function normaliseName(raw: string): string {
   return raw
     .toLowerCase()
@@ -68,7 +86,7 @@ async function hasTrigram(db: Db): Promise<boolean> {
  * so a mismatch is never bridged - it mints a separate entity instead.
  */
 export async function resolveEntity(db: Db, m: MentionInput): Promise<Resolution> {
-  const env = (m.env ?? 'unknown').toLowerCase()
+  const env = normaliseEnv(m.kind, m.env)
   const nameNorm = normaliseName(m.raw)
 
   // Rung 1: strong identifiers.
@@ -94,44 +112,57 @@ export async function resolveEntity(db: Db, m: MentionInput): Promise<Resolution
     }
   }
 
-  const envClause = `and e.env = $2`
-
-  // Rung 2: alias exact, same scope.
-  if (m.scope) {
-    const scoped = await db.query<{ id: string; display_name: string }>(
-      `select e.id, e.display_name
-         from entity_alias a join entity e on e.id = a.entity_id
-        where a.name_norm = $1 ${envClause} and a.scope = $3 and e.canonical_id = e.id
-        ${m.kind ? 'and e.kind = $4' : ''}
-        limit 1`,
-      m.kind ? [nameNorm, env, m.scope, m.kind] : [nameNorm, env, m.scope],
-    )
-    const row = scoped.rows[0]
-    if (row) {
-      warnings.push(...(await attachIdentifiers(db, row.id, m.identifiers ?? [])))
-      return {
-        entityId: row.id, resolver: 'alias', score: 0.9, minted: false,
-        displayName: row.display_name, warnings: warnings.length ? [...new Set(warnings)] : undefined,
-      }
-    }
-  }
-
-  // Rung 3: alias exact, any scope.
-  const global = await db.query<{ id: string; display_name: string }>(
-    `select e.id, e.display_name
+  // Rungs 2 and 3: an exact name match.
+  //
+  // `kind` is a PREFERENCE, not a filter. An agent guesses the kind, and the same
+  // thing called a "package" by one writer and a "repo" by another is far more
+  // likely one entity mislabelled than two distinct things. Filtering on it
+  // silently minted a duplicate every time a guess differed.
+  const candidates = await db.query<{
+    id: string; display_name: string; kind: string; env: string; scoped: boolean
+  }>(
+    `select distinct e.id, e.display_name, e.kind, e.env,
+            bool_or(a.scope is not distinct from $3) as scoped
        from entity_alias a join entity e on e.id = a.entity_id
-      where a.name_norm = $1 ${envClause} and e.canonical_id = e.id
-      ${m.kind ? 'and e.kind = $3' : ''}
-      limit 1`,
-    m.kind ? [nameNorm, env, m.kind] : [nameNorm, env],
+      where a.name_norm = $1 and e.canonical_id = e.id
+        and (e.env = $2 or e.env = 'unknown' or $2 = 'unknown')
+      group by e.id, e.display_name, e.kind, e.env`,
+    [nameNorm, env, m.scope ?? null],
   )
-  if (global.rows[0]) {
-    const row = global.rows[0]
-    warnings.push(...(await attachIdentifiers(db, row.id, m.identifiers ?? [])))
-    await attachAlias(db, row.id, nameNorm, m.scope, 'alias_global', 0.7)
-    return {
-      entityId: row.id, resolver: 'alias_global', score: 0.75, minted: false,
-      displayName: row.display_name, warnings: warnings.length ? [...new Set(warnings)] : undefined,
+
+  if (candidates.rows.length) {
+    // An unknown env must not pick between prod and staging. If the name exists in
+    // more than one REAL environment, minting a third is wrong but so is guessing:
+    // fall through and let the merge-candidate queue surface it.
+    const realEnvs = new Set(candidates.rows.map((c) => c.env).filter((e) => e !== 'unknown'))
+    if (!(env === 'unknown' && realEnvs.size > 1)) {
+      const ranked = candidates.rows.sort((a, b) => {
+        const kindMatch = (x: typeof a) => (m.kind && x.kind === m.kind ? 1 : 0)
+        const envMatch = (x: typeof a) => (x.env === env ? 1 : 0)
+        return (
+          kindMatch(b) - kindMatch(a) ||
+          envMatch(b) - envMatch(a) ||
+          Number(b.scoped) - Number(a.scoped)
+        )
+      })
+      const row = ranked[0]!
+      const viaScope = row.scoped
+      warnings.push(...(await attachIdentifiers(db, row.id, m.identifiers ?? [])))
+      if (!viaScope) await attachAlias(db, row.id, nameNorm, m.scope, 'alias_global', 0.7)
+      if (m.kind && row.kind !== m.kind) {
+        warnings.push(
+          `resolved "${m.raw}" onto an existing ${row.kind} rather than creating a new ${m.kind}; ` +
+          `if they are genuinely different things, give them distinct names`,
+        )
+      }
+      return {
+        entityId: row.id,
+        resolver: viaScope ? 'alias' : 'alias_global',
+        score: viaScope ? 0.9 : 0.75,
+        minted: false,
+        displayName: row.display_name,
+        warnings: warnings.length ? [...new Set(warnings)] : undefined,
+      }
     }
   }
 

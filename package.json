@@ -19,6 +19,7 @@
     "activity": "tsx src/cli/activity.ts",
     "clear": "tsx src/cli/clear.ts",
     "doctor": "tsx src/cli/doctor.ts",
+    "repair": "tsx src/cli/repair.ts",
     "reset": "rm -rf .data && tsx src/cli/migrate.ts",
     "typecheck": "tsc --noEmit",
     "test": "node --test --experimental-strip-types test/*.test.ts"

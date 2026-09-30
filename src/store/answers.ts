@@ -30,14 +30,43 @@ const BARE_ANSWER_KIND: Partial<Record<Gap['gap_kind'], string>> = {
   unknown_technology: 'technology',
 }
 
-/** Work out which namespace an identifier belongs to from its shape. */
-function guessAuthority(value: string): string | null {
-  const v = value.trim()
-  if (/^arn:aws:/i.test(v)) return 'arn'
-  if (/^(module|resource)\./i.test(v)) return 'tf_address'
-    if (/^https?:\/\//i.test(v)) return 'url'
-  if (/^[\w.-]+\/[\w.-]+\/[\w.-]+/.test(v) || /gitlab\.com|github\.com/i.test(v)) return 'git_remote'
-  if (/^\d+$/.test(v)) return 'gitlab_project'
+/**
+ * Pull an identifier OUT of whatever the user typed.
+ *
+ * People answer "which one is this?" in sentences. Storing the sentence verbatim
+ * as the identifier defeats the entire point - identifiers work because they match
+ * exactly, and a paragraph never matches anything. Observed on the first real run:
+ * a git_remote whose value was "It is the @reformjs/reactive package at
+ * projects/reactive in the monorepo https://github.com/codemedic42/reform".
+ */
+export function extractIdentifier(text: string): { authority: string; value: string } | null {
+  const t = text.trim()
+
+  const arn = /arn:aws:[^\s,;)'"]+/i.exec(t)
+  if (arn) return { authority: 'arn', value: arn[0] }
+
+  const url = /https?:\/\/[^\s,;)'"]+/i.exec(t)
+  if (url) {
+    const clean = url[0].replace(/[.,;]+$/, '').replace(/\.git$/, '')
+    // A repository URL is a git_remote, normalised to host/owner/repo so the same
+    // repo referred to with or without a scheme resolves to one identifier.
+    const repo = /^https?:\/\/([^/]+\/[^/]+\/[^/?#]+)/i.exec(clean)
+    if (repo && /github|gitlab|bitbucket|git\./i.test(clean)) {
+      return { authority: 'git_remote', value: repo[1]!.toLowerCase() }
+    }
+    return { authority: 'url', value: clean }
+  }
+
+  const tf = /\b(?:module|resource)\.[\w.\-\[\]"]+/i.exec(t)
+  if (tf) return { authority: 'tf_address', value: tf[0] }
+
+  // host/owner/repo written without a scheme
+  const bare = /\b((?:github|gitlab|bitbucket)\.[a-z.]+\/[\w.\-]+\/[\w.\-]+)/i.exec(t)
+  if (bare) return { authority: 'git_remote', value: bare[1]!.toLowerCase().replace(/\.git$/, '') }
+
+  // a bare value only counts when it is the WHOLE answer
+  if (/^\d+$/.test(t)) return { authority: 'gitlab_project', value: t }
+  if (/^[\w@/.\-]+$/.test(t) && t.includes('/')) return { authority: 'git_remote', value: t.toLowerCase() }
   return null
 }
 
@@ -104,15 +133,20 @@ export async function answerGap(db: Db, gap: Gap, answer: string): Promise<Answe
   }
 
   if (gap.gap_kind === 'unidentified_entity') {
-    const authority = guessAuthority(text)
-    if (!authority) return { understood: false, action: 'could not tell what kind of identifier that is' }
+    const found = extractIdentifier(text)
+    if (!found) {
+      return {
+        understood: false,
+        action: 'no identifier found in that answer — give a repository URL, an ARN, or a Terraform address',
+      }
+    }
     await db.query(
       `insert into entity_identifier (entity_id, authority, value) values ($1,$2,$3)
        on conflict (authority, value) do nothing`,
-      [gap.entity_id, authority, text],
+      [gap.entity_id, found.authority, found.value],
     )
     await db.query('update entity set provisional = false where id = $1', [gap.entity_id])
-    return { understood: true, action: 'attached identifier', detail: { authority, value: text } }
+    return { understood: true, action: 'attached identifier', detail: found }
   }
 
   // ── everything else: try a full sentence first, then a bare value ────────

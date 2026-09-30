@@ -213,3 +213,20 @@ test('an identifier answer is filed under the right authority', async () => {
   assert.equal((res.detail as any).authority, 'arn')
   await db.close()
 })
+
+test('an identifier is extracted from a sentence, not stored as one', async () => {
+  const { extractIdentifier } = await import('../src/store/answers.ts')
+  // Observed verbatim on the first real run.
+  const prose = 'It is the @reformjs/reactive package at projects/reactive in the monorepo https://github.com/codemedic42/reform'
+  assert.deepEqual(extractIdentifier(prose), {
+    authority: 'git_remote', value: 'github.com/codemedic42/reform',
+  })
+  // Scheme and .git normalise away, so one repo yields one identifier.
+  assert.deepEqual(extractIdentifier('https://github.com/codemedic42/reform.git'),
+    { authority: 'git_remote', value: 'github.com/codemedic42/reform' })
+  assert.deepEqual(extractIdentifier('arn:aws:rds:eu-west-1:1111:db:notifications'),
+    { authority: 'arn', value: 'arn:aws:rds:eu-west-1:1111:db:notifications' })
+  assert.deepEqual(extractIdentifier('it lives at module.notifications_db in terraform'),
+    { authority: 'tf_address', value: 'module.notifications_db' })
+  assert.equal(extractIdentifier('I have no idea honestly'), null, 'and asks again rather than storing junk')
+})
