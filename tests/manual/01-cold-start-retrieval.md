@@ -23,6 +23,14 @@ The test has a control and a treatment:
 Manual tests must never touch a real graph — scanning fixtures into it would
 pollute it permanently and there would be no safe way to clear it.
 
+Three things make that hard to get wrong by accident:
+
+- each test repository carries its own `.lak.json`, so any session inside it uses
+  the throwaway graph wherever the repository ends up
+- `npm run clear` defaults to the throwaway graph; emptying a real one needs
+  `--real --yes`, and says what it is about to destroy first
+- the `test:*` scripts carry the profile, so there is no env var to forget
+
 The testing workspace carries a `.lak.json`, and the MCP server walks up from the
 session's working directory to find it. So every session inside
 `~/source/local/ai/ai-knowledge-testing/` reads and writes `lak_test`, while
@@ -32,14 +40,14 @@ scope conflicts.
 Every tool says which graph it is touching:
 
 ```
-$ LAK_PROFILE=test npm run clear
+$ npm run clear
 clearing: lak_test (via LAK_PROFILE)
 ```
 
 Reset the test repositories and the graph:
 
 ```bash
-npx tsx tests/manual/lib/reset.ts                    # discard any changes
+npm run test:reset                    # discard any changes
 LAK_PROFILE=test npx tsx src/cli/migrate.ts          # first time only
 ```
 
@@ -146,7 +154,7 @@ Run `doctor` before clearing, not after.
 ## Phase A — populate by asking
 
 ```bash
-LAK_PROFILE=test npm run clear           # the throwaway graph now knows nothing
+npm run clear           # the throwaway graph now knows nothing
 npx tsx tests/manual/lib/snapshot.ts 01-a-before   # records the empty starting point
 
 cd ~/source/local/ai/ai-knowledge-testing/library-test
@@ -166,8 +174,8 @@ Then, in the other terminal:
 
 ```bash
 cd ~/source/local/ai/living-ai-knowledge
-LAK_PROFILE=test npm run activity
-LAK_PROFILE=test npx tsx tests/manual/lib/snapshot.ts 01-a-after
+npm run test:activity
+npm run test:snapshot -- 01-a-after
 ```
 
 **PASS** — `scan_repository` appears in the activity log, and the graph holds the
@@ -218,8 +226,8 @@ Ask:
 Then:
 
 ```bash
-LAK_PROFILE=test npm run activity
-LAK_PROFILE=test npx tsx tests/manual/lib/snapshot.ts 01-b-after
+npm run test:activity
+npm run test:snapshot -- 01-b-after
 ```
 
 **PASS** — the log shows at least one of `find_similar`, `ask_knowledge` or
@@ -249,7 +257,7 @@ claude
 > Write context files for DateSelector, DateRangeSelector and TextField.
 
 ```bash
-LAK_PROFILE=test npm run activity    # expect draft_context and write_context calls
+npm run test:activity    # expect draft_context and write_context calls
 cd ~/source/github.com/codemedic42/reform && git status --short
 ```
 
@@ -261,11 +269,11 @@ Then re-index so the new prose is searchable:
 
 ```bash
 cd ~/source/local/ai/living-ai-knowledge
-LAK_PROFILE=test npm run embed -- index
-LAK_PROFILE=test npx tsx tests/manual/lib/snapshot.ts 01-c-after
+npm run test:embed -- index
+npm run test:snapshot -- 01-c-after
 ```
 
-> These land in `library-test`. Undo them with `npx tsx tests/manual/lib/reset.ts`
+> These land in `library-test`. Undo them with `npm run test:reset`
 > — or commit them to a branch if you want a scenario that starts documented.
 
 ---
@@ -281,8 +289,8 @@ claude
 ```
 
 ```bash
-LAK_PROFILE=test npm run activity
-LAK_PROFILE=test npx tsx tests/manual/lib/snapshot.ts 01-d-after
+npm run test:activity
+npm run test:snapshot -- 01-d-after
 ```
 
 **PASS** — the log shows `find_similar` (or `ask_knowledge`) *followed by*

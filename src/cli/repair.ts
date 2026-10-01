@@ -10,6 +10,18 @@ import { extractIdentifier } from '../store/answers.ts'
  * spot later, so it prints what it would do and does nothing until --apply.
  */
 const apply = process.argv.includes('--apply')
+const real = process.argv.includes('--real')
+
+// Same inversion as clear: merging entities is hard to unpick in bulk, so the
+// throwaway graph is the default target and a real one must be asked for.
+if (!real) {
+  process.env.LAK_PROFILE = 'test'
+  delete process.env.DATABASE_URL
+}
+
+const { describeDatabase, resolveDatabase } = await import('../db/index.ts')
+console.log(`repairing: ${describeDatabase(resolveDatabase())}${real ? '' : '  (pass --real to target a real graph)'}`)
+
 const db = await open()
 await migrate(db, { quiet: true })
 
