@@ -164,6 +164,37 @@ A `FAIL` means stop. The empty-graph warnings are correct at this point.
 > nothing about whether the tool descriptions work unaided. Add that only after
 > seeing the unaided result.
 
+### Contamination
+
+Every phase here measures whether a session reaches for the tools *unprompted*, so
+a session that has read this file has answered the question for free. Phase A's
+criterion is "`scan_repository` appears in the log"; a session that read that
+sentence will produce it. The phase is then void, not merely weakened.
+
+This has already happened once. The fixture READMEs named this repository, a review
+session followed the pointer to a sibling checkout, and read Phase A's pass
+criteria. The READMEs no longer mention it — see the note on fixture isolation in
+`tests/manual/README.md` — but the fixtures sit one directory from this file and a
+shell command can still reach it, so check rather than assume.
+
+After each phase, grep that fixture's session transcript:
+
+```bash
+slug=-Users-codemedic42-source-github-com-codemedic42-lore-testing-library-ui   # or -app-client
+latest=$(ls -t ~/.claude/projects/$slug/*.jsonl | head -1)
+grep -c 'tests/manual\|01-cold-start-retrieval\.md' "$latest"
+```
+
+Zero is the only passing number. Two details matter in that command. It reads only
+the newest transcript, because a contaminated one stays on disk and would otherwise
+fail every later run. And it matches `01-cold-start-retrieval.md` with the
+extension, because the scenario *branch* carries the same name and a session running
+`git branch` is harmless.
+
+A non-zero count voids that phase. Record it in `results/` and rerun the phase in a
+fresh session rather than scoring it — a contaminated pass is indistinguishable from
+a real one, which makes it worse than a failure.
+
 ---
 
 ## Phase A — populate by asking
