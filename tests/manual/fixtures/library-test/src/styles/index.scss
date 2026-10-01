@@ -1,9 +1,0 @@
-@use './tokens' as tokens;
-@forward './card';
-@forward './field';
-@forward './calendar';
-
-.uk-button {
-  padding: tokens.$spacing-sm tokens.$spacing-md;
-  border-radius: tokens.$radius;
-}

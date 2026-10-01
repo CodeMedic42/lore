@@ -36,23 +36,22 @@ $ LAK_PROFILE=test npm run clear
 clearing: lak_test (via LAK_PROFILE)
 ```
 
-Set up the workspace and both fixtures:
+Reset the test repositories and the graph:
 
 ```bash
-npx tsx tests/manual/lib/fixture.ts library-test     # --force to replace
-npx tsx tests/manual/lib/fixture.ts client-test
+npx tsx tests/manual/lib/reset.ts                    # discard any changes
 LAK_PROFILE=test npx tsx src/cli/migrate.ts          # first time only
 ```
 
-Two repositories, deliberately:
+Two repositories in `~/source/local/ai/ai-knowledge-testing/`, deliberately:
 
 | | |
 |---|---|
 | `library-test` | `@acme/ui-kit` — nine components, a four-level composition chain, SCSS, Rollup, Vitest, ESLint |
 | `client-test` | `@acme/contact-form` — consumes the library, has no copy of its source |
 
-The whole test now runs inside this workspace, so it touches no real repository
-and no real graph, and anyone can reproduce it from a clone.
+Each is a real git repository and its own source of truth. The whole test runs
+inside this workspace, touching no real repository and no real graph.
 
 ## What has to be running
 
@@ -266,8 +265,8 @@ LAK_PROFILE=test npm run embed -- index
 LAK_PROFILE=test npx tsx tests/manual/lib/snapshot.ts 01-c-after
 ```
 
-> These land in the fixture, which is disposable — re-run `fixture.ts --force` to
-> reset it.
+> These land in `library-test`. Undo them with `npx tsx tests/manual/lib/reset.ts`
+> — or commit them to a branch if you want a scenario that starts documented.
 
 ---
 

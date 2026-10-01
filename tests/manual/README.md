@@ -31,14 +31,37 @@ Every command prints which graph it is touching before acting on it.
 |---|---|
 | `01-*.md` | The test itself — steps, pass criteria, a results template |
 | `lib/snapshot.ts` | Records graph counts and tool history per phase |
-| `lib/fixture.ts` | Materialises the consuming-repo fixture outside this repo |
-| `fixtures/` | Committed templates, copied out by `lib/fixture.ts` before use |
-| `fixtures/client-test` | A UI client consuming a component library it does not own |
+| `lib/reset.ts` | Returns the test repositories to a clean state between runs |
 | `results/` | Per-run evidence — gitignored |
 
-A fixture is committed as a template and copied elsewhere before use, because a
-Claude session started inside this repository resolves its project to this
-repository. A test that depends on the session knowing nothing would quietly have
-the entire knowledge tool in context.
+## The test repositories
+
+They live in the workspace, not here:
+
+```
+~/source/local/ai/ai-knowledge-testing/
+  .lak.json        points every session inside at the throwaway database
+  library-test/    @acme/ui-kit — nine components, a four-level composition chain
+  client-test/     @acme/contact-form — consumes the library, has no copy of its source
+```
+
+Each is a real git repository and **is its own source of truth**. There is no
+template to keep in sync: git is the reset mechanism, and branches are how
+scenarios vary.
+
+```bash
+npx tsx tests/manual/lib/reset.ts                  # discard changes, clean untracked
+npx tsx tests/manual/lib/reset.ts --branch=main    # and switch branch first
+```
+
+A test that dirties a repository — phase C writes context files into
+`library-test` — is undone by resetting, as long as the changes are not committed.
+A fix the repositories genuinely need is committed to the relevant branch.
+
+They must live outside this repository for two reasons. A Claude session started
+inside this one resolves its project to this one, so a test that depends on the
+session knowing nothing would quietly have the whole knowledge tool in context. And
+`load_context` checks freshness with `git log` against the repository holding the
+file, which needs each fixture to have a real git identity of its own.
 
 `results/` is gitignored. Snapshots are evidence for one run, not project history.
