@@ -131,6 +131,7 @@ const observation = z.object({
 // ── reading ────────────────────────────────────────────────────────────────
 
 server.registerTool('ask_knowledge', {
+  annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
   title: 'Ask the knowledge graph',
   description: [
     'Ask a question in plain English about how these systems fit together, and get',
@@ -171,6 +172,7 @@ server.registerTool('ask_knowledge', {
 }))
 
 server.registerTool('lookup_entity', {
+  annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
   title: 'Look up one thing',
   description: [
     'Everything known about one specific thing, and what it connects to.',
@@ -223,6 +225,7 @@ server.registerTool('lookup_entity', {
 // ── writing ────────────────────────────────────────────────────────────────
 
 server.registerTool('record_observations', {
+  annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   title: 'Record what you learned',
   description: [
     'Record durable facts about how these systems fit together, so this and any other',
@@ -268,6 +271,10 @@ server.registerTool('record_observations', {
       confidence: o.confidence ?? args.confidence,
     })) as any,
   })
+  // Settle what the graph can settle itself, here rather than on the read path:
+  // a tool that claims to be read-only must not quietly write.
+  await maintain(db).catch(() => {})
+
   const predicates: Record<string, number> = {}
   for (const o of result.results) {
     if (o.predicate) predicates[o.predicate] = (predicates[o.predicate] ?? 0) + 1
@@ -290,6 +297,7 @@ server.registerTool('record_observations', {
 }))
 
 server.registerTool('record_statement', {
+  annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   title: 'Record something the user said',
   description: [
     'Record knowledge the user stated directly, in their own words.',
@@ -337,6 +345,7 @@ server.registerTool('record_statement', {
 }))
 
 server.registerTool('load_context', {
+  annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
   title: 'Load the detailed context for one thing',
   description: [
     'Get the dense, current detail about a component, module or service - props,',
@@ -385,6 +394,7 @@ server.registerTool('load_context', {
 }))
 
 server.registerTool('scan_repository', {
+  annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   title: 'Index a repository into the knowledge graph',
   description: [
     'Read a JavaScript/TypeScript repository and record what is in it: packages,',
@@ -452,6 +462,8 @@ server.registerTool('scan_repository', {
   }
   for (const w of r.warnings.slice(0, 5)) lines.push(`  warning: ${w}`)
 
+  if (!args.dry_run) await maintain(db).catch(() => {})
+
   let indexed = 0
   if (!args.dry_run && args.index_for_search !== false && r.accepted > 0) {
     const e = embedder()
@@ -474,6 +486,7 @@ server.registerTool('scan_repository', {
 }))
 
 server.registerTool('find_similar', {
+  annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
   title: 'Find something that already exists',
   description: [
     'Describe what you are about to build, and get back things already in the',
@@ -527,6 +540,7 @@ server.registerTool('find_similar', {
 }))
 
 server.registerTool('draft_context', {
+  annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
   title: 'Gather what you need to write a context file',
   description: [
     'Collects the raw material for writing or refreshing a context file: the source',
@@ -589,6 +603,7 @@ server.registerTool('draft_context', {
 }))
 
 server.registerTool('write_context', {
+  annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
   title: 'Write or refresh a context file',
   description: [
     'Persist a context file beside the code it describes. Call draft_context first.',
@@ -622,6 +637,7 @@ server.registerTool('write_context', {
 // ── the learning loop ──────────────────────────────────────────────────────
 
 server.registerTool('pending_questions', {
+  annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
   title: 'What the graph is missing',
   description: [
     'Things the graph knows it does not know, ranked by how much answering would',
@@ -638,7 +654,6 @@ server.registerTool('pending_questions', {
     near: z.string().optional().describe('Prefer questions about this repo or project, if you are working in one'),
   },
 }, trace('pending_questions', async ({ budget, near }: any) => {
-  await maintain(db)
   const gaps = await askableQuestions(db, { budget: budget ?? 2, near })
   const total = (await knowledgeGaps(db)).length
   const text = renderGaps(gaps) + (total > gaps.length ? `\n(${total - gaps.length} lower-value gaps held back.)` : '')
@@ -649,6 +664,7 @@ server.registerTool('pending_questions', {
 }))
 
 server.registerTool('answer_question', {
+  annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   title: 'Record an answer',
   description: [
     'Record the user\'s answer to a question from pending_questions.',
@@ -664,7 +680,7 @@ server.registerTool('answer_question', {
     answer: z.string().describe("The user's answer, in their words"),
   },
 }, trace('answer_question', async ({ gap_kind, entity_id, answer }: any) => {
-  await maintain(db)
+  await maintain(db).catch(() => {})
   const gap = (await knowledgeGaps(db)).find((g) => g.gap_kind === gap_kind && g.entity_id === entity_id)
   if (!gap) {
     return {

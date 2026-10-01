@@ -320,3 +320,50 @@ test('a question about nothing known says so, and suggests recording', async () 
   assert.match(textOf(r), /record_observations/)
   await db.close()
 })
+
+test('every tool declares whether it only reads', async () => {
+  // Without this a client cannot tell ask_knowledge from write_context, so in a
+  // cautious permission mode it must prompt for all eleven. Observed: a manual
+  // test run derailed by permission prompts for read-only queries.
+  const db = await freshDb()
+  const client = await connect(db)
+  const { tools } = await client.listTools()
+
+  const readOnly = ['ask_knowledge', 'lookup_entity', 'find_similar',
+    'load_context', 'draft_context', 'pending_questions']
+  const writes = ['record_observations', 'record_statement', 'answer_question',
+    'scan_repository', 'write_context']
+
+  for (const t of tools) {
+    assert.ok(t.annotations, `${t.name} declares no annotations`)
+    assert.equal(typeof t.annotations!.readOnlyHint, 'boolean', `${t.name} readOnlyHint`)
+  }
+  for (const name of readOnly) {
+    assert.equal(tools.find((t) => t.name === name)!.annotations!.readOnlyHint, true, name)
+  }
+  for (const name of writes) {
+    assert.equal(tools.find((t) => t.name === name)!.annotations!.readOnlyHint, false, name)
+  }
+  // Only writing a file into someone's repository is destructive.
+  assert.equal(tools.find((t) => t.name === 'write_context')!.annotations!.destructiveHint, true)
+  assert.equal(tools.find((t) => t.name === 'scan_repository')!.annotations!.destructiveHint, false)
+  await db.close()
+})
+
+test('a tool that claims to be read-only does not write', async () => {
+  const db = await freshDb()
+  const client = await connect(db)
+  await ingest(db, { method: 'code_derived', env: 'prod', observations: [
+    { subject: 'web', subject_kind: 'client', predicate: 'calls',
+      object: 'GET {svc}/v1/a', object_kind: 'endpoint', qualifiers: { path: '/v1/a', method: 'GET' } },
+    { subject: 'svc', subject_kind: 'service', predicate: 'exposes_endpoint',
+      object: 'GET /v1/a', object_kind: 'endpoint', qualifiers: { path: '/v1/a', method: 'GET' } },
+  ] })
+
+  const before = await db.query<{ n: string }>('select count(*)::text n from entity_distinct')
+  await client.callTool({ name: 'pending_questions', arguments: { budget: 3 } })
+  const after = await db.query<{ n: string }>('select count(*)::text n from entity_distinct')
+  assert.equal(after.rows[0]!.n, before.rows[0]!.n,
+    'pending_questions used to run maintenance, which writes — tidying belongs on the write path')
+  await db.close()
+})
