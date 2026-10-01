@@ -122,15 +122,22 @@ export function parseExports(source: string): ExportedName[] {
     // without it the greedy capture BACKTRACKS to satisfy the lookahead, so
     // `export default ApplyConsumer(` quietly yields "ApplyConsume".
     [/export\s+default\s+(?!(?:async\s+)?(?:function|class)\b)([\w$]+)\b(?!\s*\()/g, 'default'],
+    // `export default memo(TextField)` exports the COMPONENT, wrapped. Recording
+    // the wrapper invents something that does not exist; recording nothing loses
+    // the component and every edge into it. The inner argument is the answer.
+    [/export\s+default\s+[\w$.]+\(\s*([A-Z][\w$]*)\s*[,)]/g, 'default'],
   ]
   for (const [re, kind] of patterns) {
     for (const m of src.matchAll(re)) {
       const name = m[1]
       if (!name && kind !== 'default') continue
+      const chosen = name ?? 'default'
       out.push({
-        name: name ?? 'default', kind, line: lineOf(m.index ?? 0),
-        // read the doc from the ORIGINAL source: decommenting blanked it out
-        doc: leadingDoc(source, m.index ?? 0),
+        name: chosen, kind, line: lineOf(m.index ?? 0),
+        // Read the doc from the ORIGINAL source: decommenting blanked it out.
+        // A doc comment sits above the DECLARATION, and `export default Button`
+        // usually appears far below it, so fall back to finding the declaration.
+        doc: leadingDoc(source, m.index ?? 0) ?? docForName(source, chosen),
       })
     }
   }
@@ -152,6 +159,22 @@ export function parseExports(source: string): ExportedName[] {
 
   const seen = new Set<string>()
   return out.filter((e) => (seen.has(e.name) ? false : (seen.add(e.name), true)))
+}
+
+/**
+ * The doc comment above wherever `name` is declared.
+ *
+ * `export default Button` at the bottom of a file carries no comment of its own;
+ * the prose lives above `const Button = ...`. Without this, a library that exports
+ * at the end of each file reports zero documentation and similarity search has
+ * only names to work with.
+ */
+export function docForName(source: string, name: string): string | undefined {
+  const decl = new RegExp(
+    `(?:^|\\n)\\s*(?:export\\s+)?(?:default\\s+)?(?:async\\s+)?(?:const|let|var|function|class)\\s+${name}\\b`,
+  ).exec(source)
+  if (!decl) return undefined
+  return leadingDoc(source, decl.index + (decl[0].length - decl[0].trimStart().length))
 }
 
 /** JSX tags that start with a capital are components; lowercase ones are DOM. */

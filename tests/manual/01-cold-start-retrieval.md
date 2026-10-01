@@ -36,15 +36,23 @@ $ LAK_PROFILE=test npm run clear
 clearing: lak_test (via LAK_PROFILE)
 ```
 
-Set up the workspace and this test's fixture:
+Set up the workspace and both fixtures:
 
 ```bash
-npx tsx tests/manual/lib/fixture.ts client-test      # --force to replace
+npx tsx tests/manual/lib/fixture.ts library-test     # --force to replace
+npx tsx tests/manual/lib/fixture.ts client-test
 LAK_PROFILE=test npx tsx src/cli/migrate.ts          # first time only
 ```
 
-> Phase A still scans the REAL Reform repository — that is the point. Only the
-> graph it writes into is disposable.
+Two repositories, deliberately:
+
+| | |
+|---|---|
+| `library-test` | `@acme/ui-kit` — nine components, a four-level composition chain, SCSS, Rollup, Vitest, ESLint |
+| `client-test` | `@acme/contact-form` — consumes the library, has no copy of its source |
+
+The whole test now runs inside this workspace, so it touches no real repository
+and no real graph, and anyone can reproduce it from a clone.
 
 ## What has to be running
 
@@ -71,6 +79,11 @@ docker start lak-pg                      # the service
 cd ~/source/local/ai/living-ai-knowledge
 npm test                                 # green before trusting anything
 ```
+
+`library-test` is small on purpose. A real repository is a better test of whether
+the extractor survives reality, and a worse test of everything else: too many
+components to hold in your head, and no way to tell a wrong answer from an
+unfamiliar one.
 
 **Register the MCP server for all projects** (once — not registered by default,
 and without it the session in Reform has no tools at all):
@@ -137,7 +150,7 @@ Run `doctor` before clearing, not after.
 LAK_PROFILE=test npm run clear           # the throwaway graph now knows nothing
 npx tsx tests/manual/lib/snapshot.ts 01-a-before   # records the empty starting point
 
-cd ~/source/github.com/codemedic42/reform
+cd ~/source/local/ai/ai-knowledge-testing/library-test
 claude
 ```
 
@@ -158,8 +171,9 @@ LAK_PROFILE=test npm run activity
 LAK_PROFILE=test npx tsx tests/manual/lib/snapshot.ts 01-a-after
 ```
 
-**PASS** — `scan_repository` appears in the activity log, and the graph holds
-roughly 100+ components.
+**PASS** — `scan_repository` appears in the activity log, and the graph holds the
+nine components with their composition chain
+(`DateRangeSelector → DateSelector → TextField → FieldLabel`).
 
 **PARTIAL** — the graph is populated, but via many `record_observations` calls
 after reading files by hand. It worked, but expensively; `scan_repository`'s
@@ -210,9 +224,8 @@ LAK_PROFILE=test npx tsx tests/manual/lib/snapshot.ts 01-b-after
 ```
 
 **PASS** — the log shows at least one of `find_similar`, `ask_knowledge` or
-`lookup_entity`, and the answer names a real Reform component
-(`DateRangeSelectInput`, `DateSelectField`, `DateSingleSelectField`) that appears
-nowhere in this repository.
+`lookup_entity`, and the answer names `DateRangeSelector`, which appears nowhere in
+this repository.
 
 **FAIL** — no tool calls. This is the outcome worth knowing about, and the one
 seen in practice before now. If it fails, record **how the answer was reached**
@@ -226,15 +239,15 @@ Nothing has documented those components yet. That is what phase D changes.
 
 ## Phase C — write the context files
 
-**Back in Reform**, since that is where the files belong — they are committed beside
-the code they describe.
+**Back in the library**, since that is where the files belong — they are committed
+beside the code they describe.
 
 ```bash
-cd ~/source/github.com/codemedic42/reform
+cd ~/source/local/ai/ai-knowledge-testing/library-test
 claude
 ```
 
-> Write context files for DatePicker, DateSelectField and DateRangeSelectInput.
+> Write context files for DateSelector, DateRangeSelector and TextField.
 
 ```bash
 LAK_PROFILE=test npm run activity    # expect draft_context and write_context calls
@@ -253,8 +266,8 @@ LAK_PROFILE=test npm run embed -- index
 LAK_PROFILE=test npx tsx tests/manual/lib/snapshot.ts 01-c-after
 ```
 
-> These files land in the Reform working tree. `git checkout` them afterwards if
-> you would rather not keep them.
+> These land in the fixture, which is disposable — re-run `fixture.ts --force` to
+> reset it.
 
 ---
 
@@ -264,7 +277,7 @@ New session, **back in the consuming repo**, asking **the identical phase B
 question**.
 
 ```bash
-cd ~/source/local/ai/contact-form-demo
+cd ~/source/local/ai/ai-knowledge-testing/client-test
 claude
 ```
 

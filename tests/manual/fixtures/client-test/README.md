@@ -1,4 +1,4 @@
 # @acme/contact-form
 
-Customer contact form for the marketing site. Built on the Reform component
-library (`@reformjs/reactive`).
+Customer contact form for the marketing site. Built on the `@acme/ui-kit`
+component library.

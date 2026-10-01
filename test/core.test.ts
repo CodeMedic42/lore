@@ -325,6 +325,31 @@ test('an unknown environment still refuses to choose between prod and staging', 
   await db.close()
 })
 
+test('a differing kind resolves within a family but not across one', async () => {
+  const db = await freshDb()
+  // package and repo are plausibly the same thing described differently.
+  await ingest(db, { method: 'code_derived', observations: [
+    { subject: 'ui-kit', subject_kind: 'package', predicate: 'built_with',
+      object: 'Rollup', object_kind: 'technology' }] })
+  await ingest(db, { method: 'llm_inferred', observations: [
+    { subject: 'ui-kit', subject_kind: 'repo', predicate: 'note', object_literal: 'the library' }] })
+  const merged = await db.query<{ n: string }>(
+    `select count(*)::text n from entity where display_name = 'ui-kit' and canonical_id = id`)
+  assert.equal(Number(merged.rows[0]!.n), 1, 'package and repo are one container')
+
+  // A component and a repository are not, however similar their names look.
+  await ingest(db, { method: 'code_derived', observations: [
+    { subject: 'app', subject_kind: 'repo', predicate: 'note', object_literal: 'the application repo' }] })
+  await ingest(db, { method: 'code_derived', observations: [
+    { subject: 'App', subject_kind: 'component', predicate: 'composes',
+      object: 'TextField', object_kind: 'component' }] })
+  const split = await db.query<{ kind: string }>(
+    `select kind from entity where display_name in ('app','App') and canonical_id = id order by kind`)
+  assert.deepEqual(split.rows.map((r) => r.kind), ['component', 'repo'],
+    'a component named App must not be swallowed by a repository named app')
+  await db.close()
+})
+
 test('a datastore still partitions by environment', async () => {
   const db = await freshDb()
   await ingest(db, { method: 'human', env: 'prod', observations: [

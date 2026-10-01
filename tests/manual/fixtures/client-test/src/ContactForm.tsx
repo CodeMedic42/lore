@@ -1,12 +1,10 @@
 import { useState } from 'react'
-import TextField from '@reformjs/reactive/fields/text-field'
-import SelectField from '@reformjs/reactive/fields/select-field'
-import Card from '@reformjs/reactive/arrangement/card'
+import { Card, TextField, Button } from '@acme/ui-kit'
 
 export interface ContactDetails {
   fullName: string
   email: string
-  enquiryType: string
+  message: string
 }
 
 /** Customer enquiry form on the marketing site. Submits to /v1/enquiries. */
@@ -14,27 +12,31 @@ export const ContactForm = () => {
   const [details, setDetails] = useState<ContactDetails>({
     fullName: '',
     email: '',
-    enquiryType: 'general',
+    message: '',
   })
 
   return (
-    <Card>
+    <Card title="Get in touch">
       <TextField
+        id="full-name"
         label="Full name"
         value={details.fullName}
         onChange={(fullName) => setDetails({ ...details, fullName })}
       />
       <TextField
+        id="email"
         label="Email"
         value={details.email}
         onChange={(email) => setDetails({ ...details, email })}
       />
-      <SelectField
-        label="Enquiry type"
-        value={details.enquiryType}
-        onChange={(enquiryType) => setDetails({ ...details, enquiryType })}
+      <TextField
+        id="message"
+        label="Message"
+        value={details.message}
+        onChange={(message) => setDetails({ ...details, message })}
       />
-      {/* TODO: customers need to tell us when they are available to be called back */}
+      {/* TODO: customers need to tell us when they are available for a callback */}
+      <Button label="Send" onClick={() => {}} variant="primary" />
     </Card>
   )
 }

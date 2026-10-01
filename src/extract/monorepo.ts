@@ -37,6 +37,11 @@ const TECHNOLOGY: Array<[RegExp, string, string]> = [
   [/^cypress$/, 'tests_with', 'Cypress'],
   [/^mocha$/, 'tests_with', 'Mocha'],
   [/^@testing-library\//, 'tests_with', 'Testing Library'],
+  [/^eslint$/, 'lints_with', 'ESLint'],
+  [/^stylelint$/, 'lints_with', 'Stylelint'],
+  [/^prettier$/, 'lints_with', 'Prettier'],
+  [/^@biomejs\/biome$/, 'lints_with', 'Biome'],
+  [/^oxlint$/, 'lints_with', 'Oxlint'],
   [/^typescript$/, 'written_in', 'TypeScript'],
   [/^sass$|^node-sass$/, 'written_in', 'SCSS'],
   [/^less$/, 'written_in', 'Less'],
@@ -308,6 +313,28 @@ export async function extractMonorepo(db: Db, opts: ExtractOptions): Promise<Ext
       for (const imp of imports) {
         if (imp.typeOnly || !imp.local) continue
         const target = resolveSpecifier(imp.specifier, pkg, byName, file)
+
+        // A NAMED import from a declared dependency that is not in this scan is
+        // still a usable fact: `import { TextField } from '@acme/ui-kit'` yields
+        // the identity '@acme/ui-kit#TextField', which is exactly what the other
+        // repository's own scan will emit. The two halves meet in the graph
+        // without either scan having seen the other - which is the whole point of
+        // identifying a component by package plus export name.
+        if (!target && imp.imported !== 'default' && imp.imported !== '*') {
+          const external = externalPackage(imp.specifier, deps)
+          if (external && jsx.has(imp.local) && primary && looksLikeComponent(imp.imported, 'x.tsx')) {
+            obs.push({
+              subject: primary, subject_kind: 'component',
+              subject_identifiers: id('module_export', `${pkg.name}#${primary}`),
+              predicate: 'composes',
+              object: imp.imported, object_kind: 'component',
+              object_identifiers: id('module_export', `${external}#${imp.imported}`),
+              evidence: [{ repo: repoKey, path: relPath }],
+            })
+            preview.push(`${pkg.name}/${primary} composes ${external}/${imp.imported}`)
+          }
+          continue
+        }
         if (!target) continue
         const crossPackage = target.name !== pkg.name
         if (!crossPackage && !opts.includeIntraPackage) continue
@@ -412,6 +439,14 @@ function resolveSpecifier(
     if (hit) return hit
   }
   return null
+}
+
+/** The declared dependency a bare specifier belongs to, if any. */
+function externalPackage(specifier: string, deps: Record<string, string>): string | null {
+  if (specifier.startsWith('.')) return null
+  const parts = specifier.split('/')
+  const name = specifier.startsWith('@') ? parts.slice(0, 2).join('/') : parts[0]!
+  return name in deps ? name : null
 }
 
 /**

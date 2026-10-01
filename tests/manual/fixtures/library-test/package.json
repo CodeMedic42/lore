@@ -1,0 +1,28 @@
+{
+  "name": "@acme/ui-kit",
+  "version": "1.3.0",
+  "description": "Small React component library: layout, inputs and date selection",
+  "main": "dist/index.js",
+  "module": "dist/index.mjs",
+  "types": "dist/index.d.ts",
+  "repository": "https://github.com/acme/ui-kit.git",
+  "homepage": "https://acme.github.io/ui-kit",
+  "scripts": {
+    "build": "rollup -c",
+    "test": "vitest run",
+    "lint": "eslint src && stylelint 'src/**/*.scss'"
+  },
+  "peerDependencies": { "react": "^18.0.0" },
+  "dependencies": { "classnames": "^2.5.1", "date-fns": "^3.6.0" },
+  "devDependencies": {
+    "react": "^18.3.1",
+    "typescript": "^5.4.0",
+    "rollup": "^4.18.0",
+    "sass": "^1.77.0",
+    "vitest": "^1.6.0",
+    "@testing-library/react": "^16.0.0",
+    "eslint": "^9.5.0",
+    "stylelint": "^16.6.0",
+    "prettier": "^3.3.0"
+  }
+}

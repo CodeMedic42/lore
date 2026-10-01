@@ -67,15 +67,49 @@ test('every shape of default export is read correctly', () => {
     ['export default async function Loader() {}', ['Loader']],
     ['export default class Panel extends X {}', ['Panel']],
     ['export default function () {}', []],
-    // A default export that is a CALL exports the wrapper's result, not the
-    // wrapper. Recording the wrapper invents a component that does not exist.
-    ['export default memo(Thing);', []],
-    ['export default applyForwardRef(Accordion);', []],
-    ['export default ApplyConsumer(SubMenu);', []],
+    // A default export that is a CALL exports the WRAPPED COMPONENT. The wrapper
+    // name must never be recorded - it names something that does not exist - but
+    // the component inside it must be, or every edge into it is lost.
+    ['export default memo(Thing);', ['Thing']],
+    ['export default applyForwardRef(Accordion);', ['Accordion']],
+    ['export default ApplyConsumer(SubMenu);', ['SubMenu']],
+    ['export default defineConfig({});', []],
   ]
   for (const [src, expected] of shapes) {
     assert.deepEqual(parseExports(src).map((e) => e.name), expected, src)
   }
+})
+
+test('a component wrapped by an HOC is recorded, the wrapper is not', () => {
+  // memo(TextField) exports the COMPONENT, wrapped. Recording "memo" invents
+  // something that does not exist; recording nothing loses the component and
+  // every composition edge into it.
+  const shapes: Array<[string, string[]]> = [
+    ['export default memo(TextField);', ['TextField']],
+    ['export default applyForwardRef(Accordion);', ['Accordion']],
+    ['export default ApplyConsumer(SubMenu);', ['SubMenu']],
+    ['export default defineConfig({});', []],
+    ['export default memo(lowercaseThing);', []],
+  ]
+  for (const [src, expected] of shapes) {
+    assert.deepEqual(parseExports(src).map((e) => e.name), expected, src)
+  }
+})
+
+test('a doc comment above the declaration is found from the export below it', () => {
+  // Libraries commonly declare at the top and export at the bottom; the prose
+  // sits above the declaration, nowhere near the export statement.
+  const src = [
+    "import { memo } from 'react'",
+    '',
+    '/** Single-line text input. The base input primitive. */',
+    'const TextField = ({ id }) => <input id={id} />',
+    '',
+    'export default memo(TextField)',
+  ].join('\n')
+  const found = parseExports(src).find((e) => e.name === 'TextField')!
+  assert.match(found.doc ?? '', /base input primitive/,
+    'without this a library that exports at the end of each file reports zero documentation')
 })
 
 test('a PascalCase type export is not a component', () => {
@@ -359,6 +393,69 @@ test('an unresolvable default import is skipped rather than guessed at', async (
   const n = await db.query<{ n: string }>(
     `select count(*)::text n from entity where display_name = 'Mystery'`)
   assert.equal(Number(n.rows[0]!.n), 0, 'better a missing edge than an invented component')
+  await rm(dir, { recursive: true, force: true })
+  await db.close()
+})
+
+test('two repositories scanned separately meet on module_export identity', async () => {
+  const db = await freshDb()
+  const mk = async (name: string, files: Record<string, string>) => {
+    const dir = await mkdtemp(join(tmpdir(), 'lak-xrepo-'))
+    for (const [p, body] of Object.entries(files)) {
+      await mkdir(join(dir, p, '..'), { recursive: true })
+      await writeFile(join(dir, p), body)
+    }
+    return dir
+  }
+
+  const lib = await mk('lib', {
+    'package.json': JSON.stringify({ name: '@acme/ui-kit', main: 'src/index.ts' }),
+    'src/text-field.tsx': 'const TextField = () => <input />\nexport default TextField\n',
+    'src/index.ts': "export { default as TextField } from './text-field.js'\n",
+  })
+  const app = await mk('app', {
+    'package.json': JSON.stringify({
+      name: '@acme/app', main: 'src/App.tsx', dependencies: { '@acme/ui-kit': '^1.0.0' },
+    }),
+    'src/App.tsx': "import { TextField } from '@acme/ui-kit'\nexport const App = () => <TextField />\n",
+  })
+
+  // Scanned independently. Neither scan can see the other's files.
+  await extractMonorepo(db, { root: lib, repoKey: 'ui-kit' })
+  await extractMonorepo(db, { root: app, repoKey: 'app' })
+
+  const n = await db.query<{ n: string }>(
+    `select count(*)::text n from entity where display_name = 'TextField' and canonical_id = id`)
+  assert.equal(Number(n.rows[0]!.n), 1,
+    'package + export name is derivable from BOTH sides of the boundary, so the halves meet')
+
+  const edge = await db.query<{ s: string; o: string }>(
+    `select s.display_name s, o.display_name o from edges_canon(now()) ec
+       join entity s on s.id = ec.subject join entity o on o.id = ec.object
+      where ec.predicate = 'composes'`)
+  assert.deepEqual(edge.rows, [{ s: 'App', o: 'TextField' }],
+    'the consuming app composes a component it has no source for')
+
+  await rm(lib, { recursive: true, force: true })
+  await rm(app, { recursive: true, force: true })
+  await db.close()
+})
+
+test('a default import from an external package is not guessed at', async () => {
+  const db = await freshDb()
+  const dir = await mkdtemp(join(tmpdir(), 'lak-extdef-'))
+  await mkdir(join(dir, 'src'), { recursive: true })
+  await writeFile(join(dir, 'package.json'), JSON.stringify({
+    name: '@acme/app', main: 'src/App.tsx', dependencies: { '@acme/ui-kit': '^1.0.0' } }))
+  // A default import's local name is arbitrary, and the target file is not here
+  // to check it against, so there is no honest identity to record.
+  await writeFile(join(dir, 'src/App.tsx'),
+    "import Whatever from '@acme/ui-kit/text-field'\nexport const App = () => <Whatever />\n")
+
+  await extractMonorepo(db, { root: dir, repoKey: 'app' })
+  const n = await db.query<{ n: string }>(
+    `select count(*)::text n from entity where display_name = 'Whatever'`)
+  assert.equal(Number(n.rows[0]!.n), 0)
   await rm(dir, { recursive: true, force: true })
   await db.close()
 })

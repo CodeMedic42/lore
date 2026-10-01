@@ -48,6 +48,33 @@ export function normaliseEnv(kind: string | undefined, env: string | undefined):
   return kind && ENVIRONMENTLESS.has(kind) ? 'unknown' : e
 }
 
+/**
+ * Kinds that can legitimately be confused for one another.
+ *
+ * `kind` used to be a hard filter, which minted a twin whenever a writer guessed
+ * "repo" where the scanner had written "package". Making it a pure preference
+ * fixed that and opened the opposite hole: a component called `App` resolved onto
+ * a repository called `app`, because the names normalise the same and nothing
+ * stopped it.
+ *
+ * So a differing kind resolves only WITHIN a family. A package and a repo are
+ * plausibly the same thing described differently; a component and a repo are not.
+ */
+const KIND_FAMILY: Record<string, string> = {
+  package: 'container', repo: 'container', domain: 'container', system: 'container',
+  component: 'unit', service: 'unit', client: 'unit', endpoint: 'unit',
+  iac_module: 'unit', pipeline: 'unit',
+  technology: 'technology',
+  datastore: 'infra', cache: 'infra', queue: 'infra', cloud_resource: 'infra',
+  capability: 'concept', data_concept: 'concept',
+  team: 'org', alert: 'ops',
+}
+
+function sameFamily(a: string | undefined, b: string): boolean {
+  if (!a || a === b) return true
+  return (KIND_FAMILY[a] ?? a) === (KIND_FAMILY[b] ?? b)
+}
+
 export function normaliseName(raw: string): string {
   return raw
     .toLowerCase()
@@ -130,13 +157,17 @@ export async function resolveEntity(db: Db, m: MentionInput): Promise<Resolution
     [nameNorm, env, m.scope ?? null],
   )
 
-  if (candidates.rows.length) {
+  // A differing kind is only a mislabel within a family; across families it is a
+  // genuine name collision and must mint.
+  const compatible = candidates.rows.filter((c) => sameFamily(m.kind, c.kind))
+
+  if (compatible.length) {
     // An unknown env must not pick between prod and staging. If the name exists in
     // more than one REAL environment, minting a third is wrong but so is guessing:
     // fall through and let the merge-candidate queue surface it.
-    const realEnvs = new Set(candidates.rows.map((c) => c.env).filter((e) => e !== 'unknown'))
+    const realEnvs = new Set(compatible.map((c) => c.env).filter((e) => e !== 'unknown'))
     if (!(env === 'unknown' && realEnvs.size > 1)) {
-      const ranked = candidates.rows.sort((a, b) => {
+      const ranked = compatible.sort((a, b) => {
         const kindMatch = (x: typeof a) => (m.kind && x.kind === m.kind ? 1 : 0)
         const envMatch = (x: typeof a) => (x.env === env ? 1 : 0)
         return (
