@@ -11,10 +11,10 @@ A control and a treatment:
 
 | Phase | Where | What it establishes |
 |---|---|---|
-| A — populate | `library-test` | The graph can be filled by asking, not by running a CLI |
-| B — cold ask | `client-test` | **Control.** Does a fresh session use the tools at all? |
-| C — document | `library-test` | Context files get written for three components |
-| D — cold ask again | `client-test` | **Treatment.** Does the same question get a better answer? |
+| A — populate | `library-ui` | The graph can be filled by asking, not by running a CLI |
+| B — cold ask | `app-client` | **Control.** Does a fresh session use the tools at all? |
+| C — document | `library-ui` | Context files get written for three components |
+| D — cold ask again | `app-client` | **Treatment.** Does the same question get a better answer? |
 
 B and D ask the **identical question** from a repository that has no copy of the
 library's source. That is the point: grep cannot answer it, so anything the agent
@@ -24,21 +24,21 @@ produces must have come from the graph.
 
 ## The two repositories
 
-```
-~/source/local/ai/ai-knowledge-testing/
-  library-test/    @acme/ui-kit — nine components, SCSS, Rollup, Vitest, ESLint
-  client-test/     @acme/contact-form — consumes the library, has no copy of its source
-```
+Two standalone repositories, listed in [`repos.json`](./repos.json):
 
 | | |
 |---|---|
-| `library-test` | `Button` `Card` `Calendar` `CalendarDay` `DateRangeSelector` `DateSelector` `FieldLabel` `HelperText` `TextField`, in a four-level chain: `DateRangeSelector → DateSelector → TextField → FieldLabel` |
-| `client-test` | A contact form using `Card`, `TextField` and `Button`, with a TODO implying a need for date selection without naming a component |
+| **`lore-testing-library-ui`** | `@acme/ui-kit` — `Button` `Card` `Calendar` `CalendarDay` `DateRangeSelector` `DateSelector` `FieldLabel` `HelperText` `TextField`, in a four-level chain: `DateRangeSelector → DateSelector → TextField → FieldLabel` |
+| **`lore-testing-app-client`** | `@acme/contact-form` — a form using `Card`, `TextField` and `Button`, with a TODO implying a need for date selection without naming a component. No `node_modules`, no copy of the library's source. |
 
-Each is a real git repository and its own source of truth. Reset between runs with
-`npm run test:reset`; vary scenarios with branches.
+Each is its own source of truth. Reset between runs with `npm run test:reset`
+(`--clone` fetches them if missing, `--branch=x` switches first); vary scenarios
+with branches.
 
-`library-test` is deliberately small. A real repository is a better test of whether
+Adjust the paths in `repos.json` if you clone them somewhere other than
+`~/source/github.com/codemedic42/`.
+
+The library is deliberately small. A real repository is a better test of whether
 the extractor survives reality, and a worse test of everything else — too many
 components to hold in your head, and no way to tell a wrong answer from an
 unfamiliar one.
@@ -54,7 +54,8 @@ re-scan restores.
 Three things make that hard to get wrong by accident:
 
 - each test repository commits its own `.lak.json`, so any session inside it uses
-  the throwaway graph wherever that repository ends up
+  the throwaway graph wherever it is cloned — `test:reset` reports which graph each
+  repository would use, so a missing one is visible rather than silent
 - `npm run clear` defaults to the throwaway graph; emptying a real one needs
   `--real --yes` and says what it would destroy first
 - the `test:*` scripts carry the profile, so there is no environment variable to
@@ -160,7 +161,7 @@ npm run test:reset                      # repositories back to a clean state
 npm run clear                           # the throwaway graph knows nothing
 npm run test:snapshot -- 01-a-before
 
-cd ~/source/local/ai/ai-knowledge-testing/library-test
+cd ~/source/github.com/codemedic42/lore-testing-library-ui
 claude
 ```
 
@@ -201,7 +202,7 @@ A different repository, with no copy of the library's source. Grep **cannot**
 answer this, so whatever comes back came from the graph.
 
 ```bash
-cd ~/source/local/ai/ai-knowledge-testing/client-test
+cd ~/source/github.com/codemedic42/lore-testing-app-client
 claude
 ```
 
@@ -236,7 +237,7 @@ Back in the library, because that is where the files belong — beside the code 
 describe.
 
 ```bash
-cd ~/source/local/ai/ai-knowledge-testing/library-test
+cd ~/source/github.com/codemedic42/lore-testing-library-ui
 claude
 ```
 
@@ -244,7 +245,7 @@ claude
 
 ```bash
 npm run test:activity                   # expect draft_context and write_context
-cd ~/source/local/ai/ai-knowledge-testing/library-test && git status --short
+cd ~/source/github.com/codemedic42/lore-testing-library-ui && git status --short
 ```
 
 **PASS** — three `*.context.md` files beside their components, each with
@@ -259,8 +260,8 @@ npm run test:embed -- index
 npm run test:snapshot -- 01-c-after
 ```
 
-> These land in `library-test`. Undo with `npm run test:reset`, or commit them to a
-> branch if you want a scenario that starts documented.
+> These land in `lore-testing-library-ui`. Undo with `npm run test:reset`, or commit
+> them to a branch if you want a scenario that starts documented.
 
 ---
 
@@ -270,7 +271,7 @@ A new session in the consuming repository, asking **the identical phase B
 question**.
 
 ```bash
-cd ~/source/local/ai/ai-knowledge-testing/client-test
+cd ~/source/github.com/codemedic42/lore-testing-app-client
 claude
 ```
 

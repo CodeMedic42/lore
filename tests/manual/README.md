@@ -36,23 +36,26 @@ Every command prints which graph it is touching before acting on it.
 
 ## The test repositories
 
-They live in the workspace, not here:
+Separate repositories, listed in [`repos.json`](./repos.json):
 
-```
-~/source/local/ai/ai-knowledge-testing/
-  .lak.json        points every session inside at the throwaway database
-  library-test/    @acme/ui-kit — nine components, a four-level composition chain
-  client-test/     @acme/contact-form — consumes the library, has no copy of its source
-```
+| | |
+|---|---|
+| [`lore-testing-library-ui`](https://github.com/CodeMedic42/lore-testing-library-ui) | A component library you consume but do not own |
+| [`lore-testing-app-client`](https://github.com/CodeMedic42/lore-testing-app-client) | A client consuming it, with no copy of its source |
 
-Each is a real git repository and **is its own source of truth**. There is no
-template to keep in sync: git is the reset mechanism, and branches are how
-scenarios vary.
+Each is **its own source of truth**. There is no template to keep in sync: git is
+the reset mechanism, and branches are how scenarios vary.
 
 ```bash
-npx tsx tests/manual/lib/reset.ts                  # discard changes, clean untracked
-npx tsx tests/manual/lib/reset.ts --branch=main    # and switch branch first
+npm run test:reset                  # discard changes, clean untracked
+npm run test:reset -- --clone       # fetch any that are missing
+npm run test:reset -- --branch=x    # switch branch first
 ```
+
+Each commits its own `.lak.json`, so a session inside it uses the throwaway graph
+wherever it is cloned. `test:reset` reports which graph each would use, so a
+repository missing that file is visible rather than silently writing to a real
+graph.
 
 A test that dirties a repository — phase C writes context files into
 `library-test` — is undone by resetting, as long as the changes are not committed.
