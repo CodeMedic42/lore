@@ -1,0 +1,17 @@
+{
+  "note": "The repositories the manual tests run against. Each is real and standalone; each commits its own .lore.json so a session inside it uses the throwaway graph. Adjust `path` if you clone them somewhere else.",
+  "repos": [
+    {
+      "name": "library-ui",
+      "path": "~/source/github.com/codemedic42/lore-testing-library-ui",
+      "url": "git@github.com:CodeMedic42/lore-testing-library-ui.git",
+      "stands_for": "A component library you consume but do not own"
+    },
+    {
+      "name": "app-client",
+      "path": "~/source/github.com/codemedic42/lore-testing-app-client",
+      "url": "git@github.com:CodeMedic42/lore-testing-app-client.git",
+      "stands_for": "A client consuming that library, with no copy of its source"
+    }
+  ]
+}
