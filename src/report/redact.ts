@@ -16,7 +16,11 @@ import { createHash } from 'node:crypto'
  */
 export type Mode = 'full' | 'redacted' | 'stats'
 
-const SALT = 'living-ai-knowledge/report/v1'
+// Changing this salt changes every pseudonym, so a report made before the change
+// and one made after are not comparable - `service-a3f1` in one is not the same
+// thing as in the other. Bumped deliberately with the rename, while no report
+// anyone is comparing against existed.
+const SALT = 'lore/report/v2'
 
 function tag(value: string): string {
   return createHash('sha256').update(SALT).update(value.toLowerCase().trim()).digest('hex').slice(0, 4)

@@ -16,7 +16,7 @@ const out: string[] = []
 let fatal = false
 
 const choice = resolveDatabase()
-console.log('\nliving-ai-knowledge preflight\n')
+console.log('\nlore preflight\n')
 console.log(`  graph:  ${describeDatabase(choice)}`)
 console.log(`          ${redact(choice.url)}\n`)
 

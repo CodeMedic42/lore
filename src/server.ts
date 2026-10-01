@@ -7,7 +7,7 @@ const db = await open()
 await migrate(db, { quiet: true })
 
 createApi(db).listen(port, () => {
-  console.log(`living-ai-knowledge listening on http://localhost:${port} (${db.driver})`)
+  console.log(`lore listening on http://localhost:${port} (${db.driver})`)
 })
 
 for (const sig of ['SIGINT', 'SIGTERM'] as const) {

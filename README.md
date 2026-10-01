@@ -1,4 +1,4 @@
-# Living AI Knowledge
+# Lore
 
 A cross-repository knowledge graph that AI coding agents write to and query.
 
@@ -431,7 +431,7 @@ Register it once, for every project — the point is asking about repos you are
 
 ```bash
 claude mcp add knowledge --scope user -- \
-  node /absolute/path/to/living-ai-knowledge/src/mcp/stdio.ts
+  node /absolute/path/to/lore/src/mcp/stdio.ts
 
 npm run doctor      # verifies the registration, the database, and everything else
 ```

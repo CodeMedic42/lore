@@ -95,7 +95,7 @@ windows means two of them, which is fine.
 docker start lore-pg
 
 claude mcp add knowledge --scope user -- \
-  node /Users/codemedic42/source/local/ai/living-ai-knowledge/src/mcp/stdio.ts
+  node /Users/codemedic42/source/github.com/codemedic42/lore/src/mcp/stdio.ts
 
 LORE_PROFILE=test npx tsx src/cli/migrate.ts        # create the throwaway schema
 ```
@@ -174,7 +174,7 @@ alone are enough is the whole point:
 Watch which tools it calls while it runs; the activity log is the durable record.
 
 ```bash
-cd ~/source/local/ai/living-ai-knowledge
+cd ~/source/github.com/codemedic42/lore
 npm run test:activity
 npm run test:snapshot -- 01-a-after
 ```
@@ -255,7 +255,7 @@ and gotchas rather than restating what the graph already holds.
 Re-index so the new prose is searchable:
 
 ```bash
-cd ~/source/local/ai/living-ai-knowledge
+cd ~/source/github.com/codemedic42/lore
 npm run test:embed -- index
 npm run test:snapshot -- 01-c-after
 ```

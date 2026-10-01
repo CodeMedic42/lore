@@ -1,9 +1,9 @@
 {
-  "name": "living-ai-knowledge",
+  "name": "lore",
   "version": "0.0.1",
   "private": true,
   "type": "module",
-  "description": "Cross-repo knowledge graph that AI agents write to and query",
+  "description": "A cross-repository knowledge graph that AI coding agents write to and query",
   "scripts": {
     "serve": "tsx src/server.ts",
     "seed": "tsx src/cli/seed.ts",

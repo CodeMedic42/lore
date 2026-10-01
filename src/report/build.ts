@@ -21,7 +21,7 @@ export async function buildReport(db: Db, opts: ReportOptions): Promise<string> 
 
   await maintain(db).catch(() => {})
 
-  L.push('# Living AI Knowledge — field report')
+  L.push('# Lore — field report')
   L.push('')
   L.push(`Generated: ${new Date().toISOString()}`)
   L.push(`Redaction: **${opts.mode}**${opts.mode === 'redacted' ? ' (names replaced with stable pseudonyms; literals and paths removed)' : ''}`)

@@ -16,7 +16,7 @@ import { migrate } from '../db/migrate.ts'
 import { createMcpServer } from './server.ts'
 
 function fail(lines: string[]): never {
-  console.error(`\n  living-ai-knowledge could not start.\n`)
+  console.error(`\n  lore could not start.\n`)
   for (const l of lines) console.error(`  ${l}`)
   console.error('')
   process.exit(1)
@@ -84,4 +84,4 @@ process.on('SIGINT', shutdown)
 process.on('SIGTERM', shutdown)
 
 await server.connect(new StdioServerTransport())
-console.error(`living-ai-knowledge ready — graph: ${describeDatabase(resolveDatabase())} [${redact(databaseUrl())}]`)
+console.error(`lore ready — graph: ${describeDatabase(resolveDatabase())} [${redact(databaseUrl())}]`)

@@ -60,7 +60,7 @@ const trace = <A extends Record<string, unknown>>(
 }
 
 const server = new McpServer(
-  { name: 'living-ai-knowledge', version: '0.1.0' },
+  { name: 'lore', version: '0.1.0' },
   {
     instructions: [
       'A shared, durable knowledge graph about the codebases this user works on.',
