@@ -29,8 +29,8 @@ if (real) {
   }
   process.env.DATABASE_URL ??= choice.url
 } else {
-  // Explicit, so it cannot be overridden by a stray .lak.json or a cwd default.
-  process.env.LAK_PROFILE = 'test'
+  // Explicit, so it cannot be overridden by a stray .lore.json or a cwd default.
+  process.env.LORE_PROFILE = 'test'
   delete process.env.DATABASE_URL
 }
 

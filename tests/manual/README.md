@@ -18,10 +18,10 @@ for it — and a model that ignores the tools makes all of it worthless.
 ## The throwaway graph
 
 Nothing here touches a real graph. The testing workspace at
-`~/source/local/ai/ai-knowledge-testing/` carries a `.lak.json`, and the MCP server
+`~/source/local/ai/ai-knowledge-testing/` carries a `.lore.json`, and the MCP server
 walks up from the session's working directory to find it — so every session inside
-that tree reads and writes `lak_test`, and sessions anywhere else use the personal
-database. Clear it with `LAK_PROFILE=test npm run clear`.
+that tree reads and writes `lore_test`, and sessions anywhere else use the personal
+database. Clear it with `LORE_PROFILE=test npm run clear`.
 
 Every command prints which graph it is touching before acting on it.
 
@@ -52,7 +52,7 @@ npm run test:reset -- --clone       # fetch any that are missing
 npm run test:reset -- --branch=x    # switch branch first
 ```
 
-Each commits its own `.lak.json`, so a session inside it uses the throwaway graph
+Each commits its own `.lore.json`, so a session inside it uses the throwaway graph
 wherever it is cloned. `test:reset` reports which graph each would use, so a
 repository missing that file is visible rather than silently writing to a real
 graph.

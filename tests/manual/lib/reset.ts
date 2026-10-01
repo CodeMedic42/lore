@@ -54,8 +54,8 @@ for (const repo of config.repos) {
   await run('git', ['clean', '-qfd'], { cwd: path })
 
   const { stdout: head } = await run('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: path })
-  const { stdout: lak } = await run('git', ['ls-files', '.lak.json'], { cwd: path })
-  const graph = lak.trim() ? 'throwaway graph' : 'NO .lak.json — would use the real graph'
+  const { stdout: lore } = await run('git', ['ls-files', '.lore.json'], { cwd: path })
+  const graph = lore.trim() ? 'throwaway graph' : 'NO .lore.json — would use the real graph'
   console.log(`  ${repo.name}: clean on ${head.trim()}  (${graph})`)
 }
 

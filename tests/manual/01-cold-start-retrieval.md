@@ -53,7 +53,7 @@ re-scan restores.
 
 Three things make that hard to get wrong by accident:
 
-- each test repository commits its own `.lak.json`, so any session inside it uses
+- each test repository commits its own `.lore.json`, so any session inside it uses
   the throwaway graph wherever it is cloned — `test:reset` reports which graph each
   repository would use, so a missing one is visible rather than silent
 - `npm run clear` defaults to the throwaway graph; emptying a real one needs
@@ -65,7 +65,7 @@ Every command states its target before acting:
 
 ```
 $ npm run clear
-clearing: lak_test (via LAK_PROFILE)
+clearing: lore_test (via LORE_PROFILE)
 (the throwaway graph — pass --real --yes to empty a real one)
 ```
 
@@ -92,12 +92,12 @@ windows means two of them, which is fine.
 ### One-time setup
 
 ```bash
-docker start lak-pg
+docker start lore-pg
 
 claude mcp add knowledge --scope user -- \
   node /Users/codemedic42/source/local/ai/living-ai-knowledge/src/mcp/stdio.ts
 
-LAK_PROFILE=test npx tsx src/cli/migrate.ts        # create the throwaway schema
+LORE_PROFILE=test npx tsx src/cli/migrate.ts        # create the throwaway schema
 ```
 
 User scope, not project scope: the whole point is asking about repositories you are
@@ -137,7 +137,7 @@ npm run test:doctor      # exits non-zero on anything fatal
 ```
 
 ```
-  graph:  lak_test (via LAK_PROFILE)
+  graph:  lore_test (via LORE_PROFILE)
   ok    database reachable (pg) — PostgreSQL 17.11
   ok    migrations applied (21/21)
   ok    pgvector present

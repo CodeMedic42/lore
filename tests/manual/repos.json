@@ -1,5 +1,5 @@
 {
-  "note": "The repositories the manual tests run against. Each is real and standalone; each commits its own .lak.json so a session inside it uses the throwaway graph. Adjust `path` if you clone them somewhere else.",
+  "note": "The repositories the manual tests run against. Each is real and standalone; each commits its own .lore.json so a session inside it uses the throwaway graph. Adjust `path` if you clone them somewhere else.",
   "repos": [
     {
       "name": "library-ui",

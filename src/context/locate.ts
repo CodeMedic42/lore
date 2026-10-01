@@ -94,7 +94,7 @@ export async function sourceRefsFor(db: Db, entityId: string): Promise<SourceRef
 /**
  * Where a repository is on this machine, if anywhere.
  *
- * Checked in order: the registered locations table, the LAK_REPO_ROOTS search
+ * Checked in order: the registered locations table, the LORE_REPO_ROOTS search
  * path, then the current working directory if its name matches. Failing all
  * three, the caller still gets a browse URL, and "it is over there" remains a
  * useful answer.
@@ -134,7 +134,7 @@ export async function locateRepo(db: Db, repoKeyOrName: string | null): Promise<
   const browseUrl = url ?? (remote ? `https://${remote.replace(/^https?:\/\//, '')}` : undefined)
 
   const bare = key.replace(/^[a-z_]+:/i, '')
-  const roots = (process.env.LAK_REPO_ROOTS ?? '').split(':').filter(Boolean)
+  const roots = (process.env.LORE_REPO_ROOTS ?? '').split(':').filter(Boolean)
   for (const root of roots) {
     const candidate = join(root, bare)
     if (await exists(candidate)) {

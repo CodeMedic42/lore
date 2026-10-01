@@ -32,14 +32,14 @@ export function createMcpServer(db: Db, injectedEmbedder?: Embedder): McpServer 
 /**
  * Created on first use, never at startup. The model costs seconds to load, and an
  * agent that only ever asks structural questions should not pay for it.
- * Set LAK_EMBEDDINGS=off to disable similarity entirely.
+ * Set LORE_EMBEDDINGS=off to disable similarity entirely.
  */
 let embedderInstance: Embedder | null = injectedEmbedder ?? null
 const embedder = (): Embedder | undefined => {
-  // An embedder passed in explicitly always wins: LAK_EMBEDDINGS=off means
+  // An embedder passed in explicitly always wins: LORE_EMBEDDINGS=off means
   // "do not load the model", not "ignore what the caller handed you".
   if (embedderInstance) return embedderInstance
-  if (process.env.LAK_EMBEDDINGS === 'off') return undefined
+  if (process.env.LORE_EMBEDDINGS === 'off') return undefined
   embedderInstance = localEmbedder()
   return embedderInstance
 }
@@ -513,7 +513,7 @@ server.registerTool('find_similar', {
   const e = embedder()
   if (!e) {
     return {
-      content: [{ type: 'text' as const, text: 'Similarity search is disabled (LAK_EMBEDDINGS=off).' }],
+      content: [{ type: 'text' as const, text: 'Similarity search is disabled (LORE_EMBEDDINGS=off).' }],
       isError: true, summary: { disabled: true },
     }
   }

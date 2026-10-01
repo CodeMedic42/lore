@@ -28,7 +28,7 @@ try {
 } catch (err) {
   out.push(bad(`database unreachable at ${databaseUrl()}`))
   out.push(`        ${(err as Error).message.split('\n')[0]}`)
-  out.push('        fix: docker start lak-pg')
+  out.push('        fix: docker start lore-pg')
   fatal = true
 }
 

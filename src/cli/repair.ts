@@ -15,7 +15,7 @@ const real = process.argv.includes('--real')
 // Same inversion as clear: merging entities is hard to unpick in bulk, so the
 // throwaway graph is the default target and a real one must be asked for.
 if (!real) {
-  process.env.LAK_PROFILE = 'test'
+  process.env.LORE_PROFILE = 'test'
   delete process.env.DATABASE_URL
 }
 

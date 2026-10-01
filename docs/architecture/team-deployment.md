@@ -84,7 +84,7 @@ export interface KnowledgeClient {
   keeps working with nothing running but Postgres.
 - `HttpClient` — the same calls over `/v1/…`, with a bearer token.
 
-Selected by config: `LAK_API_URL` set means remote. One env var.
+Selected by config: `LORE_API_URL` set means remote. One env var.
 
 The HTTP API those calls map onto **already exists and is tested**. What is missing
 is the client that uses it, and everything below.
@@ -94,12 +94,12 @@ is the client that uses it, and everything below.
 Recommended: **OIDC device-code flow**, the pattern `gh` and `gcloud` use.
 
 ```
-$ lak login
+$ lore login
   Open https://sso.company.com/device and enter: FKQR-XZTP
   ✓ Signed in as cam@company.com
 ```
 
-A refresh token is cached in `~/.config/lak/`; the MCP subprocess reads it at
+A refresh token is cached in `~/.config/lore/`; the MCP subprocess reads it at
 startup and exchanges it for short-lived access tokens. No database credentials
 anywhere, works with any SSO the company already runs, and revocation is central.
 
@@ -173,7 +173,7 @@ exists to avoid.
 
 ## What does not change
 
-The personal setup stays exactly as it is: `LAK_API_URL` unset, `LocalClient`,
+The personal setup stays exactly as it is: `LORE_API_URL` unset, `LocalClient`,
 Postgres or PGlite, nothing else running. That is not a compatibility concession —
 it is the mode most single developers should use, and it must not get worse in
 order to serve the company case.

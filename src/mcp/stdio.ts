@@ -42,7 +42,7 @@ try {
     return [...new Set(parts)].join(' ').trim()
   }
   const message = describe(err) || String(err)
-  const driver = process.env.LAK_DRIVER ?? 'pg'
+  const driver = process.env.LORE_DRIVER ?? 'pg'
 
   if (/ECONNREFUSED|ENOTFOUND|EAI_AGAIN|ETIMEDOUT|connect/i.test(message)) {
     fail([
@@ -50,15 +50,15 @@ try {
       '',
       'The knowledge graph lives in PostgreSQL, and it is not running.',
       '',
-      '  docker start lak-pg',
+      '  docker start lore-pg',
       '',
       'If that container does not exist yet:',
       '',
-      '  docker run -d --name lak-pg -e POSTGRES_PASSWORD=lak -e POSTGRES_USER=lak \\',
-      '    -e POSTGRES_DB=lak -p 55432:5432 pgvector/pgvector:pg17',
+      '  docker run -d --name lore-pg -e POSTGRES_PASSWORD=lore -e POSTGRES_USER=lore \\',
+      '    -e POSTGRES_DB=lore -p 55432:5432 pgvector/pgvector:pg17',
       '',
       'Or point somewhere else with DATABASE_URL, or run without a server at all',
-      'with LAK_DRIVER=pglite (set LAK_DATA_DIR to keep the data between runs).',
+      'with LORE_DRIVER=pglite (set LORE_DATA_DIR to keep the data between runs).',
       '',
       `Underlying error: ${message}`,
     ])
