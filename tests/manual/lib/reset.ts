@@ -55,8 +55,18 @@ for (const repo of config.repos) {
 
   const { stdout: head } = await run('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: path })
   const { stdout: lore } = await run('git', ['ls-files', '.lore.json'], { cwd: path })
+
+  // A branch with no upstream will not survive a fresh clone, so a scenario
+  // pinned to one would silently fall back to main on another machine.
+  let tracking = ''
+  try {
+    await run('git', ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}'], { cwd: path })
+  } catch {
+    tracking = '  NOT PUSHED — a fresh clone would not have this branch'
+  }
+
   const graph = lore.trim() ? 'throwaway graph' : 'NO .lore.json — would use the real graph'
-  console.log(`  ${repo.name}: clean on ${head.trim()}  (${graph})`)
+  console.log(`  ${repo.name}: clean on ${head.trim()}  (${graph})${tracking}`)
 }
 
 if (missing) {

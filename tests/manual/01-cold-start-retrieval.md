@@ -31,9 +31,21 @@ Two standalone repositories, listed in [`repos.json`](./repos.json):
 | **`lore-testing-library-ui`** | `@acme/ui-kit` — `Button` `Card` `Calendar` `CalendarDay` `DateRangeSelector` `DateSelector` `FieldLabel` `HelperText` `TextField`, in a four-level chain: `DateRangeSelector → DateSelector → TextField → FieldLabel` |
 | **`lore-testing-app-client`** | `@acme/contact-form` — a form using `Card`, `TextField` and `Button`, with a TODO implying a need for date selection without naming a component. No `node_modules`, no copy of the library's source. |
 
-Each is its own source of truth. Reset between runs with `npm run test:reset`
-(`--clone` fetches them if missing, `--branch=x` switches first); vary scenarios
-with branches.
+Each is its own source of truth.
+
+**This test runs on the `01-cold-start-retrieval` branch of both repositories** —
+one branch per test, named after it. The branch is what fixes the starting state:
+`main` drifts as the fixtures gain components, while a test's branch stays at the
+state its pass criteria were written against. Right now the branch is identical to
+`main`; it diverges the first time a fixture changes for some other test's benefit.
+
+```bash
+npm run test:reset -- --branch=01-cold-start-retrieval
+```
+
+That discards any changes, removes untracked files, and reports which graph each
+repository would use — plus a warning if a branch has no upstream, since one that
+exists only locally would silently fall back to `main` on another machine.
 
 Adjust the paths in `repos.json` if you clone them somewhere other than
 `~/source/github.com/codemedic42/`.
@@ -157,8 +169,8 @@ A `FAIL` means stop. The empty-graph warnings are correct at this point.
 ## Phase A — populate by asking
 
 ```bash
-npm run test:reset                      # repositories back to a clean state
-npm run clear                           # the throwaway graph knows nothing
+npm run test:reset -- --branch=01-cold-start-retrieval   # known starting state
+npm run clear                                            # the graph knows nothing
 npm run test:snapshot -- 01-a-before
 
 cd ~/source/github.com/codemedic42/lore-testing-library-ui
@@ -260,8 +272,11 @@ npm run test:embed -- index
 npm run test:snapshot -- 01-c-after
 ```
 
-> These land in `lore-testing-library-ui`. Undo with `npm run test:reset`, or commit
-> them to a branch if you want a scenario that starts documented.
+> These land in `lore-testing-library-ui` on the test's branch. Undo with
+> `npm run test:reset -- --branch=01-cold-start-retrieval`. If you want a scenario
+> that *starts* documented, commit them to a branch of their own — `02-…` or
+> similar — rather than to this test's branch, which must stay undocumented for
+> phase B to mean anything.
 
 ---
 

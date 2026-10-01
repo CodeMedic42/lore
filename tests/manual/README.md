@@ -46,11 +46,26 @@ Separate repositories, listed in [`repos.json`](./repos.json):
 Each is **its own source of truth**. There is no template to keep in sync: git is
 the reset mechanism, and branches are how scenarios vary.
 
+### One branch per test
+
+Each test runs on a branch of the fixture repositories named after it —
+`01-cold-start-retrieval` for the test above. The branch is what fixes the starting
+state: `main` drifts as fixtures gain components for later tests, while a test's
+branch stays at the state its pass criteria were written against.
+
 ```bash
-npm run test:reset                  # discard changes, clean untracked
-npm run test:reset -- --clone       # fetch any that are missing
-npm run test:reset -- --branch=x    # switch branch first
+npm run test:reset -- --branch=01-cold-start-retrieval
+npm run test:reset -- --clone       # fetch any repository that is missing
+npm run test:reset                  # reset whatever is checked out
 ```
+
+Reset discards changes, removes untracked files, and reports two things worth
+knowing before a run: which graph each repository would use, and whether its branch
+has an upstream. A branch that exists only locally would silently fall back to
+`main` on another machine, and the test would then be measuring a different
+starting state than the one it documents.
+
+**Push a scenario branch.** It is part of the test.
 
 Each commits its own `.lore.json`, so a session inside it uses the throwaway graph
 wherever it is cloned. `test:reset` reports which graph each would use, so a
