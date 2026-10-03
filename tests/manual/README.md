@@ -46,15 +46,28 @@ Separate repositories, listed in [`repos.json`](./repos.json):
 Each is **its own source of truth**. There is no template to keep in sync: git is
 the reset mechanism, and branches are how scenarios vary.
 
-### One branch per test
+### Branches are named for the code's state
 
-Each test runs on a branch of the fixture repositories named after it —
-`01-cold-start-retrieval` for the test above. The branch is what fixes the starting
-state: `main` drifts as fixtures gain components for later tests, while a test's
-branch stays at the state its pass criteria were written against.
+A branch fixes the starting state a test's pass criteria were written against;
+`main` drifts as the fixtures gain components for later tests.
+
+| Branch | State of the fixture | Used by |
+|---|---|---|
+| `baseline` | Undocumented. No context files, nothing recorded. | [01 — cold-start retrieval](./01-cold-start-retrieval.md) |
+
+**Name a branch for the state of the code, never for the test that uses it.**
+`git branch -a` lists every branch to every session in the repository, so one
+descriptively-named branch leaks to all tests, not just its own — a session running
+test 01 could read test 02's hypothesis straight off the branch list. `baseline`,
+`documented` and `stale-context` are honest descriptions of code states that give
+nothing away. `01-cold-start-retrieval` named the hypothesis, which is why it was
+renamed.
+
+Several tests may share one branch; the table above is the mapping, not the branch
+name.
 
 ```bash
-npm run test:reset -- --branch=01-cold-start-retrieval
+npm run test:reset -- --branch=baseline
 npm run test:reset -- --clone       # fetch any repository that is missing
 npm run test:reset                  # reset whatever is checked out
 ```

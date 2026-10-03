@@ -33,14 +33,20 @@ Two standalone repositories, listed in [`repos.json`](./repos.json):
 
 Each is its own source of truth.
 
-**This test runs on the `01-cold-start-retrieval` branch of both repositories** —
-one branch per test, named after it. The branch is what fixes the starting state:
-`main` drifts as the fixtures gain components, while a test's branch stays at the
-state its pass criteria were written against. Right now the branch is identical to
-`main`; it diverges the first time a fixture changes for some other test's benefit.
+**This test runs on the `baseline` branch of both repositories** — undocumented,
+nothing recorded, no context files. The branch is what fixes the starting state:
+`main` drifts as the fixtures gain components, while `baseline` stays at the state
+these pass criteria were written against. Right now it is identical to `main`; it
+diverges the first time a fixture changes for another test's benefit.
+
+Branches here are named for **the state of the code, never the test that uses
+them**, because `git branch -a` shows every branch to every session in the
+repository. A branch called `01-cold-start-retrieval` tells a session what is being
+measured; `baseline` tells it nothing it should not already know. Which branch each
+test uses is recorded here and in `tests/manual/README.md`, not in the branch name.
 
 ```bash
-npm run test:reset -- --branch=01-cold-start-retrieval
+npm run test:reset -- --branch=baseline
 ```
 
 That discards any changes, removes untracked files, and reports which graph each
@@ -182,14 +188,13 @@ After each phase, grep that fixture's session transcript:
 ```bash
 slug=-Users-codemedic42-source-github-com-codemedic42-lore-testing-library-ui   # or -app-client
 latest=$(ls -t ~/.claude/projects/$slug/*.jsonl | head -1)
-grep -c 'tests/manual\|01-cold-start-retrieval\.md' "$latest"
+grep -c 'tests/manual\|01-cold-start-retrieval' "$latest"
 ```
 
-Zero is the only passing number. Two details matter in that command. It reads only
-the newest transcript, because a contaminated one stays on disk and would otherwise
-fail every later run. And it matches `01-cold-start-retrieval.md` with the
-extension, because the scenario *branch* carries the same name and a session running
-`git branch` is harmless.
+Zero is the only passing number. It reads only the newest transcript, because a
+contaminated one stays on disk and would otherwise fail every later run. The match
+no longer needs to exclude a branch name: branches are named for code states, so
+nothing a session sees in `git branch` collides with the name of a test.
 
 A non-zero count voids that phase. Record it in `results/` and rerun the phase in a
 fresh session rather than scoring it — a contaminated pass is indistinguishable from
@@ -200,7 +205,7 @@ a real one, which makes it worse than a failure.
 ## Phase A — populate by asking
 
 ```bash
-npm run test:reset -- --branch=01-cold-start-retrieval   # known starting state
+npm run test:reset -- --branch=baseline   # known starting state
 npm run clear                                            # the graph knows nothing
 npm run test:snapshot -- 01-a-before
 
@@ -304,10 +309,9 @@ npm run test:snapshot -- 01-c-after
 ```
 
 > These land in `lore-testing-library-ui` on the test's branch. Undo with
-> `npm run test:reset -- --branch=01-cold-start-retrieval`. If you want a scenario
-> that *starts* documented, commit them to a branch of their own — `02-…` or
-> similar — rather than to this test's branch, which must stay undocumented for
-> phase B to mean anything.
+> `npm run test:reset -- --branch=baseline`. If you want a scenario that *starts*
+> documented, commit them to a branch of their own — `documented`, say — rather than
+> to `baseline`, which must stay undocumented for phase B to mean anything.
 
 ---
 
