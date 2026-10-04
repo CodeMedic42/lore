@@ -136,7 +136,8 @@ working tree reaches:
 | `.lore.json` `note` | Narrated "test fixture… throwaway graph" | neutralised |
 | Branch names | `01-cold-start-retrieval` stated the hypothesis, and `git branch -a` shows every branch | renamed to `baseline` |
 | **Commit messages** | The commit that removed the README pointer explained in full what it removed, and the original fixture commits called themselves fixtures and described what the test measures | history rewritten |
-| Reflog, remote-tracking refs | Kept the old messages reachable after the rewrite, via `git log --all` | expired and pruned |
+| **Historical file content** | Rewriting the *messages* preserved every tree, so `git show <old>:README.md` and `git log -p README.md` still returned the original README verbatim — app-client's included the line "must have come from the knowledge graph" | history collapsed |
+| Reflog, remote-tracking refs | Kept old objects reachable after a rewrite, via `git log --all`, until the force push landed | expired and pruned |
 
 `git log` is among the first things a reviewing session runs — it found the commit
 messages unprompted. **Before a run, check every surface in that table, not just the
@@ -146,5 +147,22 @@ moment a fixture gains any.
 Commit messages in the fixtures must therefore be boring: what changed in the code,
 nothing about why the repository exists. Explanatory messages belong in *this*
 repository, where they do no harm.
+
+**And scrubbing a file does not scrub its history.** This is the one that took two
+attempts: rewriting commit messages while preserving trees leaves every earlier
+version of every file exactly where it was, one `git log -p` away. Each fixture is
+therefore collapsed to two commits — the GitHub scaffold, and one commit holding the
+current clean tree — so no intermediate state exists to read. A fixture's history is
+not a record worth keeping; the only thing it can do is leak.
+
+Verify with the blob sweep, which checks content rather than tips:
+
+```bash
+git rev-list --objects --all | awk '{print $1}' | while read o; do
+  [ "$(git cat-file -t $o)" = blob ] && git cat-file -p $o
+done | grep -icE 'fixture|manual test|knowledge graph|throwaway'
+```
+
+Zero is the only passing number. `git log -p --all` is a cheaper approximation.
 
 `results/` is gitignored. Snapshots are evidence for one run, not project history.
