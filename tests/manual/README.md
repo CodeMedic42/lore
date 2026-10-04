@@ -103,15 +103,48 @@ a sibling checkout, and read Phase A's pass criteria. It reported the contaminat
 itself, which is the only reason that run was not scored as a pass.
 
 Isolation here is therefore a property of what the fixtures *say*, not of where
-they sit. `blockReadsOutsideWorkingDirectories` does not close the gap, because it
-gates the file tools and not `cat` under Bash; no filesystem layout closes it
-either, since a shell command can read anything the user can. What holds is that
-nothing inside a fixture gives a session a reason to look: no pointer to this
-repository, no account of what a phase measures, and no mention of the graph beyond
-the `.lore.json` the safety guard needs.
+they sit.
+
+**Correction to an earlier claim in this file.** It used to say
+`blockReadsOutsideWorkingDirectories` gates the file tools but not `cat` under
+Bash. That is wrong. The setting does cover Bash: a command whose paths the shell
+parser cannot prove in-tree — anything with a variable, like `cat "$f"` — is
+escalated to the person running the test rather than allowed. So the guard is real,
+and its strength is however those prompts get answered. The original leak most
+likely went through an approved prompt during a run where several were approved in a
+row, not through an ungated tool.
+
+That makes the human the weak link, which is an argument for the fixtures carrying
+nothing worth reading rather than for tighter settings. What holds is that nothing
+inside a fixture gives a session a reason to look: no pointer to this repository, no
+account of what a phase measures, and no mention of the graph beyond the
+`.lore.json` the safety guard needs.
 
 **So write a fixture as if the test did not exist.** A fixture describes its own
 code and nothing else. Anything that would help a session guess what is being
 measured belongs in this directory instead.
+
+### Leak surface: audit all of it, not just the files
+
+Three separate runs leaked by three different routes, each of which looked closed
+after the previous fix. The fixtures carry text in more places than a scrub of the
+working tree reaches:
+
+| Surface | How it leaked | Status |
+|---|---|---|
+| `README.md` | Named this repository and described the test's design | scrubbed |
+| `.lore.json` `note` | Narrated "test fixture… throwaway graph" | neutralised |
+| Branch names | `01-cold-start-retrieval` stated the hypothesis, and `git branch -a` shows every branch | renamed to `baseline` |
+| **Commit messages** | The commit that removed the README pointer explained in full what it removed, and the original fixture commits called themselves fixtures and described what the test measures | history rewritten |
+| Reflog, remote-tracking refs | Kept the old messages reachable after the rewrite, via `git log --all` | expired and pruned |
+
+`git log` is among the first things a reviewing session runs — it found the commit
+messages unprompted. **Before a run, check every surface in that table, not just the
+files.** Tags, CI config, issue templates and PR descriptions belong in it too the
+moment a fixture gains any.
+
+Commit messages in the fixtures must therefore be boring: what changed in the code,
+nothing about why the repository exists. Explanatory messages belong in *this*
+repository, where they do no harm.
 
 `results/` is gitignored. Snapshots are evidence for one run, not project history.
