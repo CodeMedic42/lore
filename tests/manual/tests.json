@@ -1,0 +1,14 @@
+{
+  "note": "What each manual test needs before it can run. `npm run test:setup -- --testId <id>` reads this.",
+  "tests": {
+    "01": {
+      "title": "cold-start retrieval",
+      "spec": "01-cold-start-retrieval.md",
+      "branch": "baseline",
+      "repos": ["ui-library", "client"],
+      "graph": "empty",
+      "snapshot": "01-a-before",
+      "starts_in": "ui-library"
+    }
+  }
+}

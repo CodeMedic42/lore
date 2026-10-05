@@ -27,7 +27,8 @@
     "repair": "tsx src/cli/repair.ts",
     "reset": "rm -rf .data && tsx src/cli/migrate.ts",
     "typecheck": "tsc --noEmit",
-    "test": "node --test --experimental-strip-types test/*.test.ts"
+    "test": "node --test --experimental-strip-types test/*.test.ts",
+    "test:setup": "tsx tests/manual/lib/setup.ts"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.5.8",

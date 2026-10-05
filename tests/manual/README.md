@@ -17,13 +17,19 @@ for it — and a model that ignores the tools makes all of it worthless.
 
 ## The throwaway graph
 
-Nothing here touches a real graph. The testing workspace at
-`~/source/local/ai/ai-knowledge-testing/` carries a `.lore.json`, and the MCP server
-walks up from the session's working directory to find it — so every session inside
-that tree reads and writes `lore_test`, and sessions anywhere else use the personal
-database. Clear it with `LORE_PROFILE=test npm run clear`.
+Nothing here touches a real graph. The fixture root at `~/mythos/` carries a
+`.lore.json`, and the MCP server walks up from the session's working directory to
+find it — so every session under that tree reads and writes `lore_test`, and
+sessions anywhere else use the personal database.
 
-Every command prints which graph it is touching before acting on it.
+The guard sits at the root rather than inside either repository, which is
+deliberate. A committed `.lore.json` is a file an agent reads and reasons about, and
+"why does this repository pin a database?" is one inference from "I am inside a
+test". Outside the repositories it is just as effective and invisible to the
+fixtures.
+
+`npm run clear` defaults to the throwaway graph; emptying a real one needs
+`--real --yes`. Every command prints which graph it is touching before acting.
 
 ## Layout
 
@@ -40,8 +46,8 @@ Separate repositories, listed in [`repos.json`](./repos.json):
 
 | | |
 |---|---|
-| [`lore-testing-library-ui`](https://github.com/CodeMedic42/lore-testing-library-ui) | A component library you consume but do not own |
-| [`lore-testing-app-client`](https://github.com/CodeMedic42/lore-testing-app-client) | A client consuming it, with no copy of its source |
+| [`mythos-ui-library`](https://github.com/CodeMedic42/mythos-ui-library) | A component library you consume but do not own |
+| [`mythos-client`](https://github.com/CodeMedic42/mythos-client) | A client consuming it, with no copy of its source |
 
 Each is **its own source of truth**. There is no template to keep in sync: git is
 the reset mechanism, and branches are how scenarios vary.
@@ -66,27 +72,50 @@ renamed.
 Several tests may share one branch; the table above is the mapping, not the branch
 name.
 
+## Preparing a run
+
+One command does all of it:
+
+```bash
+npm run test:setup -- --testId 01
+```
+
+It is idempotent — run it as often as you like. In order, it:
+
+1. starts `lore-pg`, creating the container if it does not exist, and waits for
+   Postgres to accept connections rather than merely be up;
+2. creates `lore_test` if missing and applies migrations;
+3. registers the `knowledge` MCP server at user scope, or re-points it if it
+   refers to an older checkout;
+4. writes `~/mythos/.lore.json`;
+5. clones any missing fixture, then resets each one to `origin/<branch>` with
+   `git clean -fdx` — `-x` matters, because a stray `node_modules` in the client
+   would let a session answer questions about the library by reading it;
+6. **refuses to continue** if a fixture resolves to anything but the throwaway
+   graph, or if the leak sweep finds anything in its history;
+7. clears the graph and takes the `before` snapshot — but only if every check
+   passed, so a failed setup never destroys the graph you were about to inspect.
+
+Exit status is non-zero on any failure, and the output names the offending commit,
+file, line and text.
+
+What each test needs lives in [`tests.json`](./tests.json); the repositories live
+in [`repos.json`](./repos.json).
+
+For the smaller job of putting a repository back mid-test, `test:reset` touches git
+and nothing else:
+
 ```bash
 npm run test:reset -- --branch=baseline
-npm run test:reset -- --clone       # fetch any repository that is missing
 npm run test:reset                  # reset whatever is checked out
 ```
 
-Reset discards changes, removes untracked files, and reports two things worth
-knowing before a run: which graph each repository would use, and whether its branch
-has an upstream. A branch that exists only locally would silently fall back to
-`main` on another machine, and the test would then be measuring a different
-starting state than the one it documents.
-
-**Push a scenario branch.** It is part of the test.
-
-Each commits its own `.lore.json`, so a session inside it uses the throwaway graph
-wherever it is cloned. `test:reset` reports which graph each would use, so a
-repository missing that file is visible rather than silently writing to a real
-graph.
+**Push a scenario branch.** It is part of the test: a branch that exists only
+locally would silently fall back to `main` on another machine, and the test would
+then be measuring a different starting state than the one it documents.
 
 A test that dirties a repository — phase C writes context files into
-`library-test` — is undone by resetting, as long as the changes are not committed.
+`ui-library` — is undone by resetting, as long as the changes are not committed.
 A fix the repositories genuinely need is committed to the relevant branch.
 
 They must live outside this repository for two reasons. A Claude session started
@@ -136,7 +165,7 @@ working tree reaches:
 | `.lore.json` `note` | Narrated "test fixture… throwaway graph" | neutralised |
 | Branch names | `01-cold-start-retrieval` stated the hypothesis, and `git branch -a` shows every branch | renamed to `baseline` |
 | **Commit messages** | The commit that removed the README pointer explained in full what it removed, and the original fixture commits called themselves fixtures and described what the test measures | history rewritten |
-| **Historical file content** | Rewriting the *messages* preserved every tree, so `git show <old>:README.md` and `git log -p README.md` still returned the original README verbatim — app-client's included the line "must have come from the knowledge graph" | history collapsed |
+| **Historical file content** | Rewriting the *messages* preserved every tree, so `git show <old>:README.md` and `git log -p README.md` still returned the original README verbatim — client's included the line "must have come from the knowledge graph" | history collapsed |
 | Reflog, remote-tracking refs | Kept old objects reachable after a rewrite, via `git log --all`, until the force push landed | expired and pruned |
 
 `git log` is among the first things a reviewing session runs — it found the commit

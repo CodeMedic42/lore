@@ -1,78 +1,65 @@
 /**
- * Return the test repositories to a clean state between runs.
+ * Return the test repositories to a clean state between phases.
  *
- *   npx tsx tests/manual/lib/reset.ts [--branch=<name>] [--clone]
+ *   npx tsx tests/manual/lib/reset.ts [--branch=<name>]
  *
- * The repositories listed in ../repos.json ARE the source of truth — they are real
- * git repositories, so git is the reset mechanism and branches are how scenarios
- * vary. Nothing is copied from a template.
+ * This is the subset of `test:setup` you want mid-test: it touches git and nothing
+ * else - no docker, no migrations, no clearing the graph. For a full preparation
+ * use `npm run test:setup -- --testId <id>`.
  */
-import { readFile, stat } from 'node:fs/promises'
-import { execFile } from 'node:child_process'
-import { promisify } from 'node:util'
-import { homedir } from 'node:os'
-import { dirname, join, resolve } from 'node:path'
+import { resolveDatabase, describeDatabase } from '../../../src/db/index.ts'
+import { exists, loadFixtures, repoPath, resetTo, run } from './fixtures.ts'
+import { join } from 'node:path'
 
-const run = promisify(execFile)
 const args = process.argv.slice(2)
 const branch = args.find((a) => a.startsWith('--branch='))?.slice(9)
-const allowClone = args.includes('--clone')
 
-interface RepoSpec { name: string; path: string; url: string; stands_for?: string }
-const config = JSON.parse(
-  await readFile(new URL('../repos.json', import.meta.url), 'utf8'),
-) as { repos: RepoSpec[] }
-
-const expand = (p: string) => resolve(p.startsWith('~') ? join(homedir(), p.slice(1)) : p)
-const exists = async (p: string) => {
-  try { await stat(p); return true } catch { return false }
-}
-
+const cfg = await loadFixtures()
 let missing = 0
-for (const repo of config.repos) {
-  const path = expand(repo.path)
+
+console.log('')
+for (const repo of cfg.repos) {
+  const path = repoPath(cfg, repo)
 
   if (!(await exists(join(path, '.git')))) {
-    if (!allowClone) {
-      console.log(`  ${repo.name}: not found at ${path}`)
-      console.log(`      clone it, or re-run with --clone`)
+    console.log(`  ${repo.name}: not found at ${path}`)
+    console.log(`      npm run test:setup -- --testId <id>   # clones it`)
+    missing++
+    continue
+  }
+
+  let head: string
+  if (branch) {
+    try {
+      head = await resetTo(cfg, repo, branch)
+    } catch (err: any) {
+      console.log(`  ${repo.name}: ${err.message}`)
       missing++
       continue
     }
-    console.log(`  ${repo.name}: cloning from ${repo.url}`)
-    await run('git', ['clone', '-q', repo.url, path], { cwd: dirname(path) })
+  } else {
+    await run('git', ['reset', '-q', '--hard'], { cwd: path })
+    await run('git', ['clean', '-qfdx'], { cwd: path })
+    const { stdout } = await run('git', ['rev-parse', '--short', 'HEAD'], { cwd: path })
+    head = stdout.trim()
   }
 
-  if (branch) {
-    try {
-      await run('git', ['checkout', '-q', branch], { cwd: path })
-    } catch {
-      console.log(`  ${repo.name}: no branch "${branch}", staying put`)
-    }
-  }
-  await run('git', ['reset', '-q', '--hard'], { cwd: path })
-  await run('git', ['clean', '-qfd'], { cwd: path })
+  const { stdout: ref } = await run('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: path })
 
-  const { stdout: head } = await run('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: path })
-  const { stdout: lore } = await run('git', ['ls-files', '.lore.json'], { cwd: path })
+  // The guard lives at the fixture root, not in the repository, so ask the resolver
+  // rather than looking for a committed file.
+  const choice = resolveDatabase(path)
+  const graph =
+    choice.url === cfg.databaseUrl
+      ? 'throwaway graph'
+      : `${describeDatabase(choice)} — NOT THE THROWAWAY GRAPH`
 
-  // A branch with no upstream will not survive a fresh clone, so a scenario
-  // pinned to one would silently fall back to main on another machine.
-  let tracking = ''
-  try {
-    await run('git', ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}'], { cwd: path })
-  } catch {
-    tracking = '  NOT PUSHED — a fresh clone would not have this branch'
-  }
-
-  const graph = lore.trim() ? 'throwaway graph' : 'NO .lore.json — would use the real graph'
-  console.log(`  ${repo.name}: clean on ${head.trim()}  (${graph})${tracking}`)
+  console.log(`  ${repo.name}: clean on ${ref.trim()} @ ${head}  (${graph})`)
 }
 
+console.log('')
 if (missing) {
-  console.log('')
-  console.log(`${missing} repository/repositories missing. Re-run with --clone to fetch them.`)
+  console.log(`${missing} repository/repositories unavailable.`)
   process.exit(1)
 }
-console.log('')
 console.log('Repositories reset. To empty the graph as well:  npm run clear')

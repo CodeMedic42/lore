@@ -11,10 +11,10 @@ A control and a treatment:
 
 | Phase | Where | What it establishes |
 |---|---|---|
-| A — populate | `library-ui` | The graph can be filled by asking, not by running a CLI |
-| B — cold ask | `app-client` | **Control.** Does a fresh session use the tools at all? |
-| C — document | `library-ui` | Context files get written for three components |
-| D — cold ask again | `app-client` | **Treatment.** Does the same question get a better answer? |
+| A — populate | `ui-library` | The graph can be filled by asking, not by running a CLI |
+| B — cold ask | `client` | **Control.** Does a fresh session use the tools at all? |
+| C — document | `ui-library` | Context files get written for three components |
+| D — cold ask again | `client` | **Treatment.** Does the same question get a better answer? |
 
 B and D ask the **identical question** from a repository that has no copy of the
 library's source. That is the point: grep cannot answer it, so anything the agent
@@ -28,8 +28,8 @@ Two standalone repositories, listed in [`repos.json`](./repos.json):
 
 | | |
 |---|---|
-| **`lore-testing-library-ui`** | `@acme/ui-kit` — `Button` `Card` `Calendar` `CalendarDay` `DateRangeSelector` `DateSelector` `FieldLabel` `HelperText` `TextField`, in a four-level chain: `DateRangeSelector → DateSelector → TextField → FieldLabel` |
-| **`lore-testing-app-client`** | `@acme/contact-form` — a form using `Card`, `TextField` and `Button`, with a TODO implying a need for date selection without naming a component. No `node_modules`, no copy of the library's source. |
+| **`mythos-ui-library`** | `@mythos/ui-library` — `Button` `Card` `Calendar` `CalendarDay` `DateRangeSelector` `DateSelector` `FieldLabel` `HelperText` `TextField`, in a four-level chain: `DateRangeSelector → DateSelector → TextField → FieldLabel` |
+| **`mythos-client`** | `@mythos/client` — a form using `Card`, `TextField` and `Button`, with a TODO implying a need for date selection without naming a component. No `node_modules`, no copy of the library's source. |
 
 Each is its own source of truth.
 
@@ -45,16 +45,20 @@ repository. A branch called `01-cold-start-retrieval` tells a session what is be
 measured; `baseline` tells it nothing it should not already know. Which branch each
 test uses is recorded here and in `tests/manual/README.md`, not in the branch name.
 
+One command prepares everything:
+
 ```bash
-npm run test:reset -- --branch=baseline
+npm run test:setup -- --testId 01
 ```
 
-That discards any changes, removes untracked files, and reports which graph each
-repository would use — plus a warning if a branch has no upstream, since one that
-exists only locally would silently fall back to `main` on another machine.
+It starts Postgres, applies migrations, registers the MCP server, writes the guard,
+clones anything missing, resets both repositories to `origin/baseline`, clears the
+graph and takes the `before` snapshot — and refuses to do those last two if a
+fixture would write to a real graph or if its history leaks. `tests/manual/README.md`
+has the full order; [`tests.json`](./tests.json) is what this test declares.
 
-Adjust the paths in `repos.json` if you clone them somewhere other than
-`~/source/github.com/codemedic42/`.
+Adjust `root` in `repos.json` if you keep the fixtures somewhere other than
+`~/mythos/`.
 
 The library is deliberately small. A real repository is a better test of whether
 the extractor survives reality, and a worse test of everything else — too many
@@ -71,9 +75,12 @@ re-scan restores.
 
 Three things make that hard to get wrong by accident:
 
-- each test repository commits its own `.lore.json`, so any session inside it uses
-  the throwaway graph wherever it is cloned — `test:reset` reports which graph each
-  repository would use, so a missing one is visible rather than silent
+- the fixture root `~/mythos/` carries a `.lore.json` and the resolver walks up from
+  the session's working directory to find it, so every session under that tree uses
+  the throwaway graph. It sits outside both repositories on purpose: a committed
+  guard is a file an agent reads and asks about, and "why does this repository pin a
+  database?" is one inference from "I am inside a test". `test:setup` refuses to
+  proceed if a fixture resolves anywhere else
 - `npm run clear` defaults to the throwaway graph; emptying a real one needs
   `--real --yes` and says what it would destroy first
 - the `test:*` scripts carry the profile, so there is no environment variable to
@@ -186,7 +193,7 @@ shell command can still reach it, so check rather than assume.
 After each phase, grep that fixture's session transcript:
 
 ```bash
-slug=-Users-codemedic42-source-github-com-codemedic42-lore-testing-library-ui   # or -app-client
+slug=-Users-codemedic42-mythos-mythos-ui-library   # or -client
 latest=$(ls -t ~/.claude/projects/$slug/*.jsonl | head -1)
 grep -c 'tests/manual\|01-cold-start-retrieval' "$latest"
 ```
@@ -205,11 +212,9 @@ a real one, which makes it worse than a failure.
 ## Phase A — populate by asking
 
 ```bash
-npm run test:reset -- --branch=baseline   # known starting state
-npm run clear                                            # the graph knows nothing
-npm run test:snapshot -- 01-a-before
+npm run test:setup -- --testId 01   # clean repos, empty graph, before-snapshot
 
-cd ~/source/github.com/codemedic42/lore-testing-library-ui
+cd ~/mythos/mythos-ui-library
 claude
 ```
 
@@ -250,7 +255,7 @@ A different repository, with no copy of the library's source. Grep **cannot**
 answer this, so whatever comes back came from the graph.
 
 ```bash
-cd ~/source/github.com/codemedic42/lore-testing-app-client
+cd ~/mythos/mythos-client
 claude
 ```
 
@@ -285,7 +290,7 @@ Back in the library, because that is where the files belong — beside the code 
 describe.
 
 ```bash
-cd ~/source/github.com/codemedic42/lore-testing-library-ui
+cd ~/mythos/mythos-ui-library
 claude
 ```
 
@@ -293,7 +298,7 @@ claude
 
 ```bash
 npm run test:activity                   # expect draft_context and write_context
-cd ~/source/github.com/codemedic42/lore-testing-library-ui && git status --short
+cd ~/mythos/mythos-ui-library && git status --short
 ```
 
 **PASS** — three `*.context.md` files beside their components, each with
@@ -308,7 +313,7 @@ npm run test:embed -- index
 npm run test:snapshot -- 01-c-after
 ```
 
-> These land in `lore-testing-library-ui` on the test's branch. Undo with
+> These land in `mythos-ui-library` on the test's branch. Undo with
 > `npm run test:reset -- --branch=baseline`. If you want a scenario that *starts*
 > documented, commit them to a branch of their own — `documented`, say — rather than
 > to `baseline`, which must stay undocumented for phase B to mean anything.
@@ -321,7 +326,7 @@ A new session in the consuming repository, asking **the identical phase B
 question**.
 
 ```bash
-cd ~/source/github.com/codemedic42/lore-testing-app-client
+cd ~/mythos/mythos-client
 claude
 ```
 

@@ -63,9 +63,21 @@ No assertion can measure that. It needs a real agent, in a real repository, with
 instruction to use the tools. That is what the manual tests are, and
 `tests/manual/README.md` is their guide.
 
-Everything in a manual test runs against a **separate throwaway database**
-(`lore_test`), selected by a committed `.lore.json` in each fixture, so testing can
-never write to a real graph. `npm run clear` defaults to the throwaway and requires
+One command prepares a run:
+
+```bash
+npm run test:setup -- --testId 01
+```
+
+It is idempotent. It starts `lore-pg`, applies migrations, registers the MCP server,
+writes the guard, clones any missing fixture, resets each to `origin/<branch>`,
+clears the graph and takes the `before` snapshot. It **refuses** to clear anything
+if a fixture would resolve to a real graph or if the leak sweep finds something in
+its history, so a failed setup never destroys what you were about to look at.
+
+Everything runs against a **separate throwaway database** (`lore_test`), selected by
+a `.lore.json` at the fixture root — outside both repositories, so nothing inside a
+fixture refers to Lore. `npm run clear` defaults to the throwaway and requires
 `--real --yes` to touch anything else. `tests/manual/results/` is gitignored.
 
 ---
@@ -76,11 +88,12 @@ Two real repositories, outside this one:
 
 | Repository | Is | Stands for |
 |---|---|---|
-| `lore-testing-library-ui` | `@acme/ui-kit` — nine components in a four-level composition chain | A component library you consume but do not own |
-| `lore-testing-app-client` | `@acme/contact-form` — a small app consuming it, with no copy of its source | A client that cannot answer questions about its dependency by reading itself |
+| `mythos-ui-library` | `@mythos/ui-library` — nine components in a four-level composition chain | A component library you consume but do not own |
+| `mythos-client` | `@mythos/client` — a small app consuming it, with no copy of its source | A client that cannot answer questions about its dependency by reading itself |
 
-Both live at `~/source/github.com/codemedic42/`, on branch `baseline`. Clone URLs
-and paths are in `tests/manual/repos.json`.
+Both live under `~/mythos/`, on branch `baseline`, with the `.lore.json` guard in
+`~/mythos/` itself rather than in either repository. Clone URLs and the root are in
+`tests/manual/repos.json`; what each test needs is in `tests/manual/tests.json`.
 
 They are separate repositories for two reasons. A session started inside *this*
 repository resolves its project to this one, so it would have the whole knowledge
@@ -131,7 +144,7 @@ The code must read as though it were written for its own sake.
 - **No `TODO` or `FIXME` referring to Lore or a test.** A TODO that implies a
   missing capability is fine and useful; one that explains why the test needs it is
   not.
-- **A property a test depends on is never explained.** `app-client` has no copy of
+- **A property a test depends on is never explained.** `client` has no copy of
   the library's source, and that absence is the whole mechanism of Phase B. Saying
   so anywhere destroys it. State nothing; let the absence do its work.
 
@@ -144,8 +157,11 @@ The code must read as though it were written for its own sake.
    branch to every session, so one bad name leaks to all tests.
 3. **README** — describes the package and its stack. Nothing else.
 4. **Comments and identifiers** — no awareness of being tested.
-5. **`.lore.json`** — the `note` states the file's function, nothing more. The file
-   itself must stay; it is what protects the real graph.
+5. **`.lore.json` stays out of the repository.** The guard lives at `~/mythos/` and
+   the resolver walks up to it. Never commit one into a fixture: it is a file an
+   agent reads and asks about, and "why does this repository pin a database?" is one
+   inference from "I am inside a test". `test:setup` fails if a fixture resolves to
+   anything but the throwaway graph.
 6. **History** — if leaking content ever lands in a fixture, rewriting commit
    *messages* is not enough. Trees persist, and `git show <old>:README.md` returns
    the content verbatim. Collapse the history instead. A fixture's history is not a
