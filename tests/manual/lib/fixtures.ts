@@ -122,6 +122,13 @@ export async function resetTo(cfg: FixtureConfig, repo: RepoSpec, branch: string
   await run('git', ['checkout', '-q', '-B', branch, `origin/${branch}`], { cwd })
   await run('git', ['reset', '-q', '--hard', `origin/${branch}`], { cwd })
   await run('git', ['clean', '-qfdx'], { cwd })
+
+  // The reset signs its own work. `git reflog` would otherwise show
+  // "reset: moving to origin/baseline" timestamped a minute before the session
+  // started, in both repositories a second apart - a harness fingerprint no file
+  // contains, and a stronger tell than anything the scrub removed.
+  await run('git', ['reflog', 'expire', '--expire=now', '--expire-unreachable=now', '--all'], { cwd })
+
   const { stdout } = await run('git', ['rev-parse', '--short', 'HEAD'], { cwd })
   return stdout.trim()
 }
