@@ -116,14 +116,21 @@ windows means two of them, which is fine.
 
 ### One-time setup
 
+**`npm run test:setup -- --testId 01` does all of this, on every run, idempotently.**
+It is written out here because knowing what it does is what lets you fix it when it
+fails:
+
 ```bash
-docker start lore-pg
+docker start lore-pg                 # setup creates the container if it is absent
 
 claude mcp add knowledge --scope user -- \
   node /Users/codemedic42/source/github.com/codemedic42/lore/src/mcp/stdio.ts
 
 LORE_PROFILE=test npx tsx src/cli/migrate.ts        # create the throwaway schema
 ```
+
+Setup also re-points the MCP registration if it refers to an older checkout, which
+is the failure you are most likely to hit after moving this repository.
 
 User scope, not project scope: the whole point is asking about repositories you are
 *not* in, so a per-project registration would defeat it.
@@ -155,6 +162,9 @@ shared state or write files.
 > which is the thing under test.
 
 ### Preflight
+
+`test:setup` checks the environment it controls. These two check what it does not —
+the code itself, and a broader read of the graph's health:
 
 ```bash
 npm test                 # green before trusting anything
