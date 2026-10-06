@@ -8,7 +8,7 @@
  * The one rule this file enforces mechanically: a fixture must contain nothing that
  * reveals it is a fixture. See `leakSweep` and context.md.
  */
-import { readFile, stat, mkdir, writeFile } from 'node:fs/promises'
+import { readFile, rm, stat, mkdir, writeFile } from 'node:fs/promises'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { homedir } from 'node:os'
@@ -94,42 +94,42 @@ export async function writeGuard(cfg: FixtureConfig): Promise<'created' | 'updat
   return 'created'
 }
 
-export async function ensureClone(cfg: FixtureConfig, repo: RepoSpec): Promise<boolean> {
-  const path = repoPath(cfg, repo)
-  if (await exists(join(path, '.git'))) return false
-  await mkdir(cfg.root, { recursive: true })
-  await run('git', ['clone', '-q', repo.url, path], {
-    env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
-  })
-  return true
-}
-
 /**
- * Put a repository back to exactly what the branch says, discarding everything
- * else. `-x` matters: a stray node_modules in the client would let a session answer
- * questions about the library by reading it, which is the one thing that repository
- * must not be able to do.
+ * Replace a fixture with a fresh clone at `branch`.
+ *
+ * Deliberately a clone rather than `reset --hard` + `clean -fdx`, which is the
+ * cheaper thing and leaves a trail. Resetting in place leaves local state that
+ * describes the harness rather than the project:
+ *
+ *   - `.git/logs/*` recording "reset: moving to origin/baseline" a minute before
+ *     the session, in both repositories a second apart;
+ *   - `.git/COMMIT_EDITMSG`, whose mtime contradicts the commit date it holds;
+ *   - working-tree mtimes from whenever the fixture was last edited.
+ *
+ * Expiring the reflog to hide the first is worse than leaving it: zero-byte log
+ * files under `logallrefupdates = true` are evidence of deliberate erasure, where a
+ * reset is only evidence of a reset. A fresh clone has none of it - one `clone:`
+ * reflog entry, no COMMIT_EDITMSG, and uniform mtimes that differ from the commit
+ * dates exactly the way every clone on earth does.
+ *
+ * It also guarantees what `-x` used to: no stray node_modules in the client, which
+ * would let a session answer questions about the library by reading it.
  */
-export async function resetTo(cfg: FixtureConfig, repo: RepoSpec, branch: string) {
-  const cwd = repoPath(cfg, repo)
+export async function freshCheckout(cfg: FixtureConfig, repo: RepoSpec, branch: string) {
+  const path = repoPath(cfg, repo)
   const env = { ...process.env, GIT_TERMINAL_PROMPT: '0' }
-  await run('git', ['fetch', '-q', 'origin', '--prune'], { cwd, env })
+  await rm(path, { recursive: true, force: true })
+  await mkdir(cfg.root, { recursive: true })
   try {
-    await run('git', ['rev-parse', '--verify', `refs/remotes/origin/${branch}`], { cwd })
-  } catch {
-    throw new Error(`${repo.name}: origin has no branch "${branch}"`)
+    await run('git', ['clone', '-q', '--branch', branch, repo.url, path], { env })
+  } catch (err: any) {
+    const detail = String(err?.stderr || err?.message || '')
+    if (/Remote branch .* not found/i.test(detail)) {
+      throw new Error(`${repo.name}: origin has no branch "${branch}"`)
+    }
+    throw new Error(`${repo.name}: clone failed - ${detail.trim().split('\n')[0]}`)
   }
-  await run('git', ['checkout', '-q', '-B', branch, `origin/${branch}`], { cwd })
-  await run('git', ['reset', '-q', '--hard', `origin/${branch}`], { cwd })
-  await run('git', ['clean', '-qfdx'], { cwd })
-
-  // The reset signs its own work. `git reflog` would otherwise show
-  // "reset: moving to origin/baseline" timestamped a minute before the session
-  // started, in both repositories a second apart - a harness fingerprint no file
-  // contains, and a stronger tell than anything the scrub removed.
-  await run('git', ['reflog', 'expire', '--expire=now', '--expire-unreachable=now', '--all'], { cwd })
-
-  const { stdout } = await run('git', ['rev-parse', '--short', 'HEAD'], { cwd })
+  const { stdout } = await run('git', ['rev-parse', '--short', 'HEAD'], { cwd: path })
   return stdout.trim()
 }
 

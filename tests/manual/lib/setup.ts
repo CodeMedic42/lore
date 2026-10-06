@@ -4,21 +4,20 @@
  *
  *   npm run test:setup -- --testId 01
  *
- * Idempotent: run it as often as you like. It clones what is missing, resets what
- * is dirty, starts what is stopped, and refuses to continue if the fixtures would
- * write to a real graph or if anything in them reveals that they are fixtures.
+ * Idempotent: run it as often as you like. It starts what is stopped, replaces each
+ * fixture with a fresh clone, and refuses to continue if the fixtures would write to
+ * a real graph or if anything in them reveals that they are fixtures.
  */
 import { resolveDatabase, describeDatabase } from '../../../src/db/index.ts'
 import {
   type FixtureConfig,
   type RepoSpec,
-  ensureClone,
+  freshCheckout,
   exists,
   leakSweep,
   loadFixtures,
   loadTests,
   repoPath,
-  resetTo,
   run,
   writeGuard,
 } from './fixtures.ts'
@@ -154,8 +153,7 @@ step(`fixtures on "${test.branch}"`)
 for (const repo of wanted) {
   const path = repoPath(cfg, repo)
   try {
-    const cloned = await ensureClone(cfg, repo)
-    const head = await resetTo(cfg, repo, test.branch)
+    const head = await freshCheckout(cfg, repo, test.branch)
 
     // The safety gate. If this resolves anywhere but the throwaway graph, a run
     // would write into a real one, so nothing else matters.
@@ -171,7 +169,7 @@ for (const repo of wanted) {
       for (const h of hits.slice(0, 4)) console.log(`          ${h.where}: ${h.line}`)
       continue
     }
-    ok(`${repo.name}: ${cloned ? 'cloned, ' : ''}clean at ${head}, throwaway graph, 0 leaks`)
+    ok(`${repo.name}: cloned at ${head}, throwaway graph, 0 leaks`)
   } catch (err: any) {
     bad(`${repo.name}: ${err.message}`)
   }
