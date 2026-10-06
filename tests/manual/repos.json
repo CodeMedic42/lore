@@ -1,7 +1,7 @@
 {
   "note": "The repositories the manual tests run against. Each is real and standalone. The .lore.json that pins them to the throwaway graph lives at `root`, OUTSIDE both repositories, so nothing inside a fixture refers to Lore - see context.md.",
   "root": "~/mythos",
-  "databaseUrl": "postgres://lore:lore@localhost:55432/lore_test",
+  "databaseUrl": "postgres://lore:lore@localhost:55432/lore_dev",
   "repos": [
     {
       "name": "ui-library",

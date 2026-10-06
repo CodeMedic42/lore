@@ -75,7 +75,7 @@ clears the graph and takes the `before` snapshot. It **refuses** to clear anythi
 if a fixture would resolve to a real graph or if the leak sweep finds something in
 its history, so a failed setup never destroys what you were about to look at.
 
-Everything runs against a **separate throwaway database** (`lore_test`), selected by
+Everything runs against a **separate throwaway database** (`lore_dev`), selected by
 a `.lore.json` at the fixture root — outside both repositories, so nothing inside a
 fixture refers to Lore. `npm run clear` defaults to the throwaway and requires
 `--real --yes` to touch anything else. `tests/manual/results/` is gitignored.

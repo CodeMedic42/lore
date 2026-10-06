@@ -32,7 +32,7 @@ In order, it:
 
 1. starts `lore-pg`, creating the container if it does not exist, and waits for
    Postgres to *accept connections* rather than merely be up;
-2. creates `lore_test` if missing and applies migrations;
+2. creates `lore_dev` if missing and applies migrations;
 3. registers the `knowledge` MCP server at user scope, or re-points it if it refers
    to an older checkout;
 4. writes the `~/mythos/.lore.json` guard;
@@ -69,7 +69,7 @@ npm run test:doctor      # exits non-zero on anything fatal
 ```
 
 ```
-  graph:  lore_test (via LORE_PROFILE)
+  graph:  lore_dev (via LORE_PROFILE)
   ok    database reachable (pg) — PostgreSQL 17.11
   ok    migrations applied (21/21)
   ok    pgvector present
@@ -170,7 +170,7 @@ Every command states its target before acting:
 
 ```
 $ npm run clear
-clearing: lore_test (via LORE_PROFILE)
+clearing: lore_dev (via LORE_PROFILE)
 (the throwaway graph — pass --real --yes to empty a real one)
 ```
 

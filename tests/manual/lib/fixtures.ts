@@ -131,10 +131,14 @@ export async function resetTo(cfg: FixtureConfig, repo: RepoSpec, branch: string
  * any commit and against every commit message - not just the checked-out tree,
  * because rewriting a message leaves the old content one `git log -p` away.
  *
- * `lore[-_]` catches the old repository names (lore-testing-*) and the test
- * database. Do not add a bare `lore`: it matches nothing here now that the guard
- * lives outside the repositories, but it would match any future connection string
- * and a check that cannot pass is a check you learn to ignore.
+ * `lore[-_]` catches the old repository names (lore-testing-*) and the database.
+ * `acme` is bare rather than `@acme` because the stale metadata that survived a
+ * rename was `https://github.com/acme/ui-kit.git` - no `@`, and so invisible to a
+ * pattern anchored on the npm scope.
+ *
+ * Do not add a bare `lore`: it matches nothing here now that the guard lives
+ * outside the repositories, but it would match any future connection string, and a
+ * check that cannot pass is a check you learn to ignore.
  */
 export const LEAK_PATTERN = [
   'fixture',
@@ -147,7 +151,7 @@ export const LEAK_PATTERN = [
   'extraction',
   'lore[-_]',
   'living-ai',
-  '@acme',
+  'acme',
 ].join('|')
 
 export interface LeakHit {

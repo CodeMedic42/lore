@@ -17,7 +17,7 @@ import { dirname, join, resolve } from 'node:path'
  * registration, and without the scope conflicts that come with one.
  */
 const PERSONAL = 'postgres://lore:lore@localhost:55432/lore'
-const TEST = 'postgres://lore:lore@localhost:55432/lore_test'
+const TEST = 'postgres://lore:lore@localhost:55432/lore_dev'
 
 export interface DatabaseChoice {
   url: string
